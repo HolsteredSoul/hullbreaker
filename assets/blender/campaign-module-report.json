@@ -1,0 +1,13 @@
+{
+  "bytes": 1064256,
+  "assets": [
+    "bridge",
+    "pylon",
+    "refinery",
+    "radar",
+    "wreck",
+    "gunship",
+    "supply"
+  ],
+  "triangles": 11312
+}

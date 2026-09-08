@@ -9,8 +9,10 @@ Run `npm install`, then `npm run dev -- --port 5187 --strictPort` and open **htt
 - **Progression:** Carrier Screen → Station Breach → Lunar Battery → Fleet Anchorage → Nesis. Each route has about four minutes of first-pass content; strong clears can finish sooner and return passes extend a level.
 - **Mastery:** clean clears and first-pass finishes earn bonuses and ranks. Extra lives arrive at 50,000 and 150,000 points, once each. Return passes raise surviving defenses' pressure up to a fixed cap without shortening warnings.
 - **Replay:** seeded approaches vary formations and scenery. Major assaults remain authored. Reached routes unlock practice, which does not affect campaign records. Choose Pilot or Rookie's slower fire.
+- **Weapons:** collect green P cells for 3/5/7-way Vulcan fire, single/twin/triple piercing lances, or 2/4/6 seekers. Amber B cells replenish pulses. Full-power cells pay 1,500 points; clean formation kills earn a separate bonus.
+- **Solid scenery:** protruding hull parts and station machinery block flight and fire. Marked wreckage can be shot apart; its destruction persists on another pass. Flat decks below flight altitude remain safe to fly over.
 
-Settings, campaign scores, ranks and practice unlocks save locally. A live campaign lasts for the current session. Older Nesis scores are retained separately. New scenery uses reusable geometry modules; Nesis and the shared combat library keep their editable Blender sources and independent loading fallbacks.
+Settings, campaign scores, ranks and practice unlocks save locally. A live campaign lasts for the current session. Older Nesis scores are retained separately. New scenery combines reusable geometry with Blender-authored bridges, pylons, refineries, radar arrays and wreckage. Gunships and supply craft add distinct silhouettes. Editable sources and loading fallbacks remain available.
 
 See [GAME_PLAN.md](GAME_PLAN.md) for the implemented design, [DEVELOPMENT.md](DEVELOPMENT.md) for extension contracts, and [CAMPAIGN_VERIFICATION.md](CAMPAIGN_VERIFICATION.md) for verification and remaining human/device checks. [PACING_REVISION.md](PACING_REVISION.md), [GAMEPLAY_PHASE.md](GAMEPLAY_PHASE.md) and [ART_SLICE.md](ART_SLICE.md) record earlier Nesis milestones.
 

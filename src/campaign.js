@@ -1,6 +1,8 @@
 import { CAMPAIGN, compileCampaign, seededRandom } from './content.js';
 import { Simulation, clamp } from './simulation.js';
 import { RETURN_TURN_SECONDS } from './flight-path.js';
+import { upgradeWeapon } from './weapon-progression.js';
+import { sweepBox } from './collision.js';
 
 // The run owns supplies and score. A simulation owns one level and its persistent
 // targets; entering a segment only resets transient combat and the local clock.
@@ -28,7 +30,7 @@ export class CampaignSimulation extends Simulation {
   constructor(definition, run, startSegment = 0) {
     super(definition.segments[startSegment], run.weapon, run.difficulty);
     this.definition = definition; this.run = run; this.segmentIndex = startSegment;
-    this.targetStates = new Map(); this.maxHealth = 1; this.player.health = 1;
+    this.targetStates = new Map(); this.obstacleStates = new Map(); this.maxHealth = 1; this.player.health = 1;
     this.score = run.score; this.lives = run.lives; this.level = run.weaponLevel; this.player.bombs = run.bombs;
     this.extraLivesAwarded = [...run.extraLivesAwarded];
     this.levelTime = 0; this.pass = 1; this.turnRemaining = 0; this.respawnRemaining = 0;
@@ -46,6 +48,7 @@ export class CampaignSimulation extends Simulation {
   clearTransient() {
     for (const items of [this.enemies, this.shots, this.pickups, this.particles]) for (const item of items) item.active = false;
     this.bombFlash = 0;
+    this.formations.clear();
   }
   enterSegment(index, repeat = false) {
     this.segmentIndex = index; this.mission = this.definition.segments[index];
@@ -62,9 +65,14 @@ export class CampaignSimulation extends Simulation {
     this.targets = this.mission.targets.map(definition => {
       let state = this.targetStates.get(definition.id);
       if (!state) { state = { ...definition, anchorY: definition.y, maxHp: definition.hp, destroyed: false, launches: 0 }; this.targetStates.set(state.id, state); }
-      Object.assign(state, { y: state.anchorY - this.distance, nextAt: definition.startAt, burstLeft: 0, burstAt: 0, aimX: undefined, aimY: undefined, aimAngle: 0, flash: 0, entered: false });
+      Object.assign(state, { y: state.anchorY - this.distance, nextAt: definition.startAt, lastLaunchAt:-Infinity, burstLeft: 0, burstAt: 0, aimX: undefined, aimY: undefined, aimAngle: 0, flash: 0, entered: false });
       return state;
     });
+    this.obstacles=(this.mission.obstacles||[]).map(o=>{
+      if(!this.obstacleStates.has(o.id))this.obstacleStates.set(o.id,{...o,maxHp:o.hp,destroyed:false});
+      return this.obstacleStates.get(o.id);
+    });
+    this.previousDistance=this.distance;this.activeObstacles=[];
     this.clearTransient(); this.chain = 0; this.chainUntil = 0;
     this.player.cooldown = .2; this.player.vx = 0;
     this.player.invulnerable = Math.max(this.player.invulnerable, 1.5);
@@ -81,8 +89,9 @@ export class CampaignSimulation extends Simulation {
     this.status = 'won'; this.chain = 0;
     this.clearBonus = 5000 + this.lives * 500 + (this.deaths === 0 ? 3000 : 0) + (this.pass === 1 ? 1500 : 0);
     this.rank = this.deaths === 0 && this.pass === 1 ? 'S' : this.deaths <= 1 && this.pass <= 2 ? 'A' : this.deaths <= 2 ? 'B' : 'C';
-    this.score += this.clearBonus + (this.level === 3 ? 1000 : 0);
-    this.level = Math.min(3, this.level + 1); this.player.bombs = Math.min(3, this.player.bombs + 1);
+    this.score += this.clearBonus;
+    this.clearRewards={base:5000,lives:this.lives*500,clean:this.deaths===0?3000:0,firstPass:this.pass===1?1500:0,power:upgradeWeapon(this,'clear'),pulse:this.player.bombs<3};
+    this.player.bombs = Math.min(3, this.player.bombs + 1);
     this.awardExtraLives(); this.clearTransient(); this.run.capture(this);
     this.emit('level-clear', { levelIndex: this.definition.index, final: this.definition.index === CAMPAIGN.levels.length - 1 });
   }
@@ -115,6 +124,7 @@ export class CampaignSimulation extends Simulation {
       this.respawnRemaining = Math.max(0, this.respawnRemaining - dt);
       if (this.respawnRemaining <= 0) {
         this.player.health = 1; this.player.x = clamp(this.player.x, -6, 6); this.player.y = -6;
+        for(const x of [this.player.x,0,-3,3,-6,6])if(!this.obstacles.some(o=>!o.destroyed&&Number.isFinite(sweepBox(x,-6+this.distance,x,-6+this.distance,o,.8,0,0,.2)))){this.player.x=x;break;}
         this.player.invulnerable = 2.5; this.player.cooldown = .15; this.emit('respawn');
       }
     }

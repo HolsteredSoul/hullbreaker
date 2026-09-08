@@ -33,7 +33,7 @@ test('carrier approach transitions and pass reset preserve damage, canceled bays
   sim.damageTarget(bay, 999); sim.damageTarget(bridge, 12);
   const hp = bridge.hp, launches = bay.launches, score = sim.score;
   sim.damageTarget(bay, 999); assert.equal(sim.score, score);
-  sim.player.x = 8; advance(sim, 60); assert.ok(sim.turnRemaining > 0);
+  sim.player.x = 0; sim.player.cooldown=1e5; advance(sim, 60); assert.ok(sim.turnRemaining > 0);
   const x = sim.player.x, y = sim.player.y;
   advance(sim, RETURN_TURN_SECONDS, { x: 1, y: 1 });
   assert.equal(sim.pass, 2); assert.equal(sim.player.x, x); assert.equal(sim.player.y, y);
@@ -108,7 +108,7 @@ test('every weapon can complete every authored assault through normal shots and 
       const target = (wanted.length ? wanted : candidates).sort((a, b) => a.y - b.y)[0];
       const x = target ? Math.sign(target.x - sim.player.x) * Math.min(1, Math.abs(target.x - sim.player.x) / .22) : 0;
       sim.update(1 / 60, { x, y: sim.player.y > -6 ? -1 : 0 });
-      if (frame % 60 === 0) assert.ok(sim.enemies.filter(e => e.active).length <= 18, 'Fighter population remains bounded');
+      if (frame % 60 === 0) assert.ok(sim.enemies.filter(e => e.active).length <= sim.mission.combat.maxEnemies, 'Fighter population remains bounded');
     }
     assert.equal(sim.status, 'won', `${weapon} / ${sim.definition.title}: ${sim.targets.filter(t => !t.destroyed).map(t => `${t.label} ${t.hp}`).join(', ')}`);
   }

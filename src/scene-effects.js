@@ -28,7 +28,7 @@ export class SceneEffects {
     this.shadows.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, 0, -4), 45);
     scene.add(this.shadows);
     const random = seededRandom(2771);
-    this.debrisData = Array.from({ length: 64 }, (_, i) => ({ x: (i % 2 ? 1 : -1) * (10 + random() * 20), height: 1 + random() * 7, z: random() * 95, speed: 0.8 + random() * 1.3, size: 0.1 + random() * 0.25, phase: random() * Math.PI * 2 }));
+    this.debrisData = Array.from({ length: 64 }, (_, i) => ({ x: (i % 2 ? 1 : -1) * (16 + random() * 20), height: -5 - random() * 9, z: random() * 95, speed: 0.8 + random() * 1.3, size: 0.1 + random() * 0.25, phase: random() * Math.PI * 2 }));
     this.debris = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(1, 0), new THREE.MeshStandardMaterial({ color: 0x627a80, roughness: 0.9, metalness: 0.5 }), this.debrisData.length);
     this.debris.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     this.debris.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, 0, -22), 100);

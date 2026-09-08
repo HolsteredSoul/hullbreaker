@@ -4,6 +4,7 @@ import { CampaignRun } from './campaign.js';
 import { GameRenderer } from './renderer.js';
 import { Input } from './input.js';
 import { Audio } from './audio.js';
+import { weaponTier } from './weapon-progression.js';
 
 const $ = selector => document.querySelector(selector);
 const saveKey = 'raiden-hullbreaker-v1';
@@ -35,7 +36,8 @@ if (renderer) {
     $('#score').textContent = String(sim.score).padStart(6, '0');
     $('#chain').textContent = sim.chain ? `${sim.chain} CHAIN · ×${Math.min(4, 1 + Math.floor(sim.chain / 5))}` : 'CLEAN CLEAR +3000 · FIRST PASS +1500';
     $('#timer').textContent = clock(sim.campaignTime); $('#progress').style.width = `${sim.progress * 100}%`;
-    $('#weapon-label').textContent = `${WEAPONS[sim.weapon].name} / LV ${sim.level}`;
+    $('#weapon-label').textContent = `${WEAPONS[sim.weapon].name} ${'▰'.repeat(sim.level)}${'▱'.repeat(3-sim.level)}`;
+    $('#power-detail').textContent=weaponTier(sim.weapon,sim.level).name;
     $('#bomb-count').textContent = sim.player.bombs; $('#bomb').disabled = !sim.controlsEnabled || sim.player.bombs <= 0;
     $('#sector').textContent = `${String(run.levelIndex + 1).padStart(2, '0')} / 05 · ${sim.definition.title.toUpperCase()}`;
     $('#bay-a').textContent = sim.mission.name;
@@ -88,6 +90,8 @@ if (renderer) {
     $('#next-level').hidden = paused || sim.status !== 'won' || run.practice || run.levelIndex === 4;
     $('#retry').textContent = run.practice ? 'RETRY PRACTICE' : 'NEW CAMPAIGN';
     if (!paused) $('#result-stats').innerHTML = `<div>${run.practice ? 'PRACTICE SCORE' : 'CAMPAIGN SCORE'}<strong>${sim.score.toLocaleString()}</strong></div><div>${sim.status === 'won' ? 'RANK / BONUS' : 'MAX CHAIN'}<strong>${sim.status === 'won' ? `${sim.rank} / +${sim.clearBonus}` : sim.maxChain}</strong></div><div>LIVES<strong>${sim.lives}</strong></div>`;
+    $('#reward-breakdown').hidden=paused||sim.status!=='won';
+    if(sim.clearRewards){const r=sim.clearRewards;$('#reward-breakdown').textContent=`Clear +${r.base} · Lives +${r.lives} · No deaths +${r.clean} · First pass +${r.firstPass}. ${r.power?`Maximum power +${r.power}`:`${weaponTier(sim.weapon,sim.level).name} unlocked`}${r.pulse?' · +1 pulse':' · Pulses full'}`;}
     (paused ? $('#resume') : !$('#next-level').hidden ? $('#next-level') : $('#retry')).focus();
   }
   function pause(reason) {
@@ -116,6 +120,12 @@ if (renderer) {
       if (event.type === 'boss-phase') notice(`CORE PHASE ${event.phase}/3 · SHIELD REBUILDING`);
       if (event.type === 'target-destroyed') notice(event.kind === 'bay' ? `${event.label} DISABLED · FEWER REINFORCEMENTS` : `${event.label} DESTROYED`);
       if (event.type === 'pickup') notice(sim.level === 3 ? 'WEAPON AT FULL POWER · SCORE BONUS' : 'WEAPON UPGRADED');
+      if(event.type==='power-up'){
+        notice(event.maxed?`MAX POWER BONUS +${event.bonus}`:`POWER ${event.previous} → ${event.level} · ${event.name}`);
+        renderer.showReward(event.maxed?`MAX +${event.bonus}`:`POWER ${event.level} · ${event.name}`,sim.player.x,sim.player.y);
+      }
+      if(event.type==='pulse-pickup'){notice(event.maxed?'PULSES FULL · +1000':'PULSE RESTORED');renderer.showReward(event.maxed?'+1000':'PULSE +1',sim.player.x,sim.player.y);}
+      if(event.type==='formation-clear')renderer.showReward(`SQUAD CLEAR +${event.bonus}`,Math.max(-5,Math.min(5,event.x)),Math.max(-5,Math.min(10,event.y)));
       if (event.type === 'level-clear' || event.type === 'game-over') {
         mode = 'ended'; $('#pause').hidden = true;
         if (!run.practice) {
@@ -128,7 +138,7 @@ if (renderer) {
           persist();
         }
         const title = event.type === 'game-over' ? 'GAME OVER.' : event.final && !run.practice ? 'FLEET BROKEN.' : `${sim.definition.title.toUpperCase()} CLEARED.`;
-        const copy = event.type === 'game-over' ? 'Your last fighter is gone. Start a fresh campaign, or learn the reached routes in practice.' : run.practice ? 'Practice complete. Campaign scores and unlocks are unchanged.' : event.final ? 'Five battlefields cleared. Replay for a cleaner route, higher rank and a stronger score.' : 'Weapon upgraded and one pulse supplied. Your remaining lives and score carry into the next level.';
+        const copy = event.type === 'game-over' ? 'Your last fighter is gone. Start a fresh campaign, or learn the reached routes in practice.' : run.practice ? 'Practice complete. Campaign scores and unlocks are unchanged.' : event.final ? 'Five battlefields cleared. Replay for a cleaner route, higher rank and a stronger score.' : `${sim.clearRewards.power?'Full power converted to score.':'Weapon upgraded.'} ${sim.clearRewards.pulse?'One pulse supplied.':'Pulses are full.'} Your remaining lives and score carry into the next level.`;
         openDialog(title, copy);
       }
     }
@@ -201,6 +211,7 @@ if (renderer) {
   if (import.meta.env.DEV) window.__hullbreaker = {
     get sim() { return sim; }, get run() { return run; }, get mode() { return mode; }, get fps() { return fps; },
     get asset() { return renderer.environment.group.userData.asset; }, get combatAsset() { return renderer.combatAsset; }, get renderer() { return renderer; },
+    get campaignAsset(){return renderer.campaignAsset;},
     get stats() { return { calls: renderer.renderer.info.render.calls, triangles: renderer.renderer.info.render.triangles, geometries: renderer.renderer.info.memory.geometries, textures: renderer.renderer.info.memory.textures, retired: renderer.retiredEnvironments.length }; },
     practice(level, segment = 0, weapon = 'vulcan') { begin({ seed: 417, weapon, difficulty: settings.difficulty, practiceLevel: level, practiceSegment: segment }); renderer.render(sim, performance.now() / 1000); },
     advance(seconds, state = { x: 0, y: 0 }, protect = false) {

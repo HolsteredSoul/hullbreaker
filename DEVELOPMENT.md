@@ -19,6 +19,11 @@ Vite serves the game on http://127.0.0.1:5187. The production bundle is `dist`; 
 | Module | Responsibility |
 |---|---|
 | `src/content.js` | Weapons/difficulties, legacy missions, campaign metadata, authored segment blueprints and seeded wave compilation |
+| `src/encounters.js` | Authored squads, supply escorts and compiled campaign cadence |
+| `src/weapon-progression.js` | Visible firing tiers and centralized upgrade awards |
+| `src/collision.js` | Swept box/circle contacts, including vertical clearance |
+| `src/sector-layout.js` | Shared scenery primitives, Blender module placements and solid volumes |
+| `src/campaign-art.js` | Shared supplementary GLB preparation and loading fallback |
 | `src/simulation.js` | Shared combat, fixed-step movement, collision, target attacks, shielding, projectiles and effects |
 | `src/campaign.js` | Run supplies, level progression, persistent target state, lives, respawn, pass loops, rewards and mastery ranks |
 | `src/environments.js` | Scenery factory registry and guarded Nesis GLB loading |
@@ -59,6 +64,12 @@ Editable Blender sources and export contracts remain in `assets/blender/nesis-as
 ## Validation and diagnostics
 
 `tests/campaign.test.js` exercises route compilation, persistent passes, gates, cross-segment reinforcements, lives, rewards, difficulty pressure, practice isolation and all 15 weapon/assault combinations. Protected-pilot checks use ordinary shots; they do not claim human difficulty validation. Legacy assault and simulation tests remain in place.
+
+`tests/arcade.test.js` covers visible tier growth, seeker assignment, piercing without repeated hits, pickup travel, typed rewards, once-only squad bonuses, cover interception, persistent wrecks, ship collisions, safe protected movement and launch/muzzle clearance. The player has a wider collision footprint against structures than against bullets; vertical clearance is independent of horizontal radius.
+
+`scripts/build-supplement-assets.py` runs in background Blender 5.2. It saves editable `assets/blender/campaign-modules-v1.blend`, exports `public/assets/campaign-modules-v1.glb` with two vertex-colored batches per asset, and extracts `src/nesis-colliders.json` from the saved Nesis source. Run with `blender --background --factory-startup --python scripts/build-supplement-assets.py`. The build operates on a separate Blender process and does not overwrite Nesis/combat sources. The supplementary library is 1,064,256 bytes and 11,312 triangles. `npm run asset:verify` includes its naming, palette and size budgets.
+
+Collision checks use route-relative coordinates and earliest swept contact so a projectile cannot damage something behind cover in the same frame. Destroyed obstacles remain in the level's persistent map. Weapon shots ignore their own emitter; bay sorties have a brief launch-clearance window, with doors held open until the sortie leaves. Background cosmetic debris stays outside the shooting corridor. Do not derive combat colliders from quality-dependent rendering or asynchronous loading results.
 
 Development builds expose `window.__hullbreaker`: read `sim`, `run`, `renderer`, `stats`, `asset`, `combatAsset`; use `practice(level, segment, weapon)` and `advance(seconds, input, protect)` for repeatable QA. Production builds omit these diagnostics. The real frame loop keeps fixed 60 Hz simulation, pauses after a >0.5-second browser stall and resets the clock after diagnostic fast-forward.
 

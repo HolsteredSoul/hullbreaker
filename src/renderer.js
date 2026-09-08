@@ -6,6 +6,8 @@ import { SceneEffects } from './scene-effects.js';
 import { loadCombatAssets, batchParts, findPart, COMBAT_ASSET_URL } from './combat-assets.js';
 import { disposeObject } from './scene-resources.js';
 import { returnPassPose } from './flight-path.js';
+import { loadCampaignArt } from './campaign-art.js';
+import { weaponTier } from './weapon-progression.js';
 
 function fighterGeometry() {
   const shape = new THREE.Shape();
@@ -52,12 +54,15 @@ export class GameRenderer {
     const hitRing = new THREE.Mesh(new THREE.RingGeometry(0.15, 0.21, 20), new THREE.MeshBasicMaterial({ color: 0xd8fff1, side: THREE.DoubleSide, depthTest: false })); hitRing.rotation.x = -Math.PI / 2; hitRing.position.y = 0.48; hitRing.renderOrder = 10; this.player.add(hitRing);
     this.scene.add(this.player);
     this.fighters = batch(this.scene, geometry, new THREE.MeshStandardMaterial({ color: 0xf1a587, metalness: 0.4, roughness: 0.6, emissive: 0x35140b, emissiveIntensity: 0.4 }), 64);
-    this.friendly = batch(this.scene, new THREE.BoxGeometry(0.085, 0.09, 0.85), new THREE.MeshBasicMaterial({ color: 0x9cffe4 }), 480);
-    this.hostile = batch(this.scene, new THREE.SphereGeometry(0.2, 6, 4), new THREE.MeshBasicMaterial({ color: 0xff866d }), 480);
-    this.missiles = batch(this.scene, new THREE.ConeGeometry(0.17, 0.7, 5).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0xffd07f }), 480);
+    this.friendly = batch(this.scene, new THREE.BoxGeometry(0.085, 0.09, 0.85), new THREE.MeshBasicMaterial({ color: 0x9cffe4 }), 1024);
+    this.hostile = batch(this.scene, new THREE.SphereGeometry(0.2, 6, 4), new THREE.MeshBasicMaterial({ color: 0xff866d }), 1024);
+    this.missiles = batch(this.scene, new THREE.ConeGeometry(0.17, 0.7, 5).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0xffd07f }), 1024);
     this.sparks = batch(this.scene, new THREE.BoxGeometry(0.09, 0.08, 0.4), new THREE.MeshBasicMaterial({ color: 0xffc880 }), 450);
-    this.warnings = batch(this.scene, new THREE.BoxGeometry(0.075, 0.025, 6), new THREE.MeshBasicMaterial({ color: 0xffbe73, transparent: true, opacity: 0.7, depthWrite: false }), 68);
+    this.warnings = batch(this.scene, new THREE.BoxGeometry(0.075, 0.025, 6), new THREE.MeshBasicMaterial({ color: 0xffbe73, transparent: true, opacity: 0.7, depthWrite: false }), 128);
     this.pickupMesh = batch(this.scene, new THREE.OctahedronGeometry(0.55), new THREE.MeshStandardMaterial({ color: 0xa1ffcf, emissive: 0x47c6a4, emissiveIntensity: 2 }), 12);
+    this.pulsePickupMesh=batch(this.scene,new THREE.OctahedronGeometry(.55),new THREE.MeshStandardMaterial({color:0xffc56a,emissive:0xdd751c,emissiveIntensity:1.5}),12);
+    this.pickupLabels=Array.from({length:12},()=>{const label=document.createElement('div');label.className='pickup-label';label.hidden=true;container.append(label);return label;});
+    this.rewardLabels=Array.from({length:10},()=>{const label=document.createElement('div');label.className='reward-label';label.hidden=true;container.append(label);return {label,until:0};});
     this.pulse = new THREE.Mesh(new THREE.RingGeometry(0.9, 1, 64), new THREE.MeshBasicMaterial({ color: 0xb9ffee, transparent: true, opacity: 0, side: THREE.DoubleSide, depthWrite: false })); this.pulse.rotation.x = -Math.PI / 2; this.scene.add(this.pulse);
     this.targets = new Map(); this.createTargets(); this.createHazards();
     this.effects = new SceneEffects(this.scene, this.environment, this.targets, mission.environment);
@@ -65,6 +70,8 @@ export class GameRenderer {
     loadCombatAssets(this.combatAsset).then(registry => this.installCombatAssets(registry)).catch(error => {
       this.combatAsset.status = 'fallback'; console.warn('Combat art unavailable; retaining procedural visuals.', error);
     });
+    this.campaignAsset={status:'loading'};
+    loadCampaignArt().then(parts=>{this.campaignParts=parts;this.installCampaignFighters();this.campaignAsset.status='ready';}).catch(()=>{this.campaignAsset.status='fallback';});
     this.raycaster = new THREE.Raycaster(); this.plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
     this.resize();
   }
@@ -84,7 +91,8 @@ export class GameRenderer {
     });
     this.fighters.visible = false; this.missiles.visible = false;
     this.enemyBatches = new Map(['scout', 'interceptor', 'bomber'].map(kind => [kind, prepared.get(kind).map(part => batch(this.scene, part.geometry, part.material, 64))]));
-    this.missileBatches = prepared.get('missile').map(part => batch(this.scene, part.geometry, part.material, 480));
+    this.installCampaignFighters();
+    this.missileBatches = prepared.get('missile').map(part => batch(this.scene, part.geometry, part.material, 1024));
     this.installTargetAssets();
     this.effects.installDebris(prepared);
     this.scene.remove(this.fighters, this.missiles);
@@ -104,6 +112,14 @@ export class GameRenderer {
       const doors = kind === 'bay' ? ['door_left', 'door_right'].map(name => { const door = findPart(root, name); door.userData.closedX = door.position.x; return door; }) : [];
       group.userData = { kind, imported: true, intact, moving, wreck, doors, rotor: kind === 'bay' ? null : findPart(root, 'rotor') };
     }
+  }
+  installCampaignFighters(){
+    if(!this.enemyBatches||!this.campaignParts)return;
+    for(const kind of ['gunship','supply'])if(!this.enemyBatches.has(kind))this.enemyBatches.set(kind,this.campaignParts.get(kind).map(p=>batch(this.scene,p.geometry,p.material,64)));
+  }
+  showReward(text,x=0,y=2){
+    const item=this.rewardLabels.find(r=>r.until<performance.now())||this.rewardLabels[0];
+    Object.assign(item,{x,y,until:performance.now()+1800});item.label.textContent=text;
   }
   makeEnvironment(mission) {
     return createEnvironment({ ...mission.environment, hardpoints: mission.targets.map(target => ({ id: target.id, socketId: target.socketId, x: target.mountX ?? target.x, y: target.mountY ?? -.55, z: -target.y, radius: target.radius })) });
@@ -138,6 +154,7 @@ export class GameRenderer {
       distance = this.settings.reducedMotion && sim.turnRemaining < sim.turnDuration / 2 ? sim.routeDistance(0) : sim.turnDistance;
     }
     this.environment.update(sceneTime, distance, menu, this.settings.reducedMotion);
+    this.environment.setObstacles?.(sim.obstacles||[]);
     if (!menu && sim.nextMission && sim.time >= sim.mission.duration - 14 && !this.previewEnvironment) {
       this.previewEnvironment = { mission: sim.nextMission, environment: this.makeEnvironment(sim.nextMission) };
       this.scene.add(this.previewEnvironment.environment.group);
@@ -302,15 +319,18 @@ export class GameRenderer {
     if (this.enemyBatches) {
       for (const [kind, meshes] of this.enemyBatches) {
         n = 0;
-        for (const enemy of sim.enemies) if (enemy.active && !menu && enemy.kind === kind) {
-          for (const mesh of meshes) this.instance(mesh, n, enemy.x, enemy.y, kind === 'bomber' ? .82 : .62, enemy.angle ?? Math.PI, -Math.max(0,1-enemy.age/(enemy.entry || .001)));
+        for (const enemy of sim.enemies) if (enemy.active && !menu && (this.enemyBatches.has(enemy.kind)?enemy.kind:enemy.kind==='gunship'?'bomber':'scout') === kind) {
+          for (const mesh of meshes) this.instance(mesh, n, enemy.x, enemy.y, ['bomber','gunship'].includes(kind) ? .82 : .62, enemy.angle ?? Math.PI, -Math.max(0,1-enemy.age/(enemy.entry || .001)));
           n++;
         }
         meshes.forEach(mesh => this.finishBatch(mesh, n));
       }
     } else { for (const enemy of sim.enemies) if (enemy.active && !menu) this.instance(this.fighters, n++, enemy.x, enemy.y, enemy.kind === 'bomber' ? 0.9 : 0.62, enemy.angle ?? Math.PI); this.finishBatch(this.fighters, n); }
     n = 0;
-    for (const enemy of sim.enemies) if (!menu && enemy.active && enemy.kind === 'interceptor' && enemy.age > (sim.mission.pace ? .65 : 1.1) && enemy.age < (sim.mission.pace ? 1.5 : 2)) this.instance(this.warnings, n++, enemy.x, enemy.y - 3, 1, 0, 0.1);
+    for (const enemy of sim.enemies) if (!menu && enemy.active) {
+      if(enemy.kind==='interceptor'&&enemy.age>(sim.mission.campaign?1.05:sim.mission.pace?.65:1.1)&&enemy.age<(sim.mission.campaign?1.85:sim.mission.pace?1.5:2))this.instance(this.warnings,n++,enemy.dashX??enemy.x,enemy.y-3,1,0,.1);
+      else if(sim.mission.campaign&&enemy.cooldown<.35&&enemy.aimX!==undefined&&enemy.kind!=='supply')this.instance(this.warnings,n++,enemy.x,enemy.y-1,.4,-Math.atan2(enemy.aimX-enemy.x,enemy.aimY-enemy.y),.1);
+    }
     for (const target of sim.targets) if (!menu && !['bay','coolant'].includes(target.kind) && sim.targetVisible(target) && target.nextAt - sim.time < 1.2) {
       if (target.kind === 'battery' || target.kind === 'launcher') {
         const x = target.mountX ?? target.x, dx = target.aimX-x, dy = target.aimY-target.y;
@@ -322,7 +342,9 @@ export class GameRenderer {
     this.friendly.material.color.setHex(WEAPONS[sim.weapon].color);
     for (const shot of sim.shots) if (shot.active && !menu) {
       const angle = -Math.atan2(shot.vx, shot.vy);
-      if (shot.friendly) this.instance(this.friendly, f++, shot.x, shot.y, sim.weapon === 'laser' ? 1.3 : 1, angle);
+      if (shot.friendly) {
+        this.temp.position.set(shot.x,0,-shot.y);this.temp.rotation.set(0,angle,0);this.temp.scale.set(shot.width||1,1,sim.weapon==='laser'?3:1.3);this.temp.updateMatrix();this.friendly.setMatrixAt(f++,this.temp.matrix);
+      }
       else if (shot.missile) { for (const mesh of this.missileBatches || [this.missiles]) this.instance(mesh, m, shot.x, shot.y, 1.3, angle, (shot.height || 0) * Math.max(0, 1 - shot.age / (shot.entry || 1))); m++; }
       else this.instance(this.hostile, h++, shot.x, shot.y, 1, angle, (shot.height || 0) * Math.max(0,1-shot.age/(shot.entry || 1)));
     }
@@ -330,7 +352,13 @@ export class GameRenderer {
     this.missileBatches?.forEach(mesh => this.finishBatch(mesh, m));
     n = 0; const maxSparks = this.quality === 'low' ? 90 : 450;
     for (const spark of sim.particles) if (spark.active && !menu && n < maxSparks) this.instance(this.sparks, n++, spark.x, spark.y, 1 - spark.age / spark.life, -Math.atan2(spark.vx, spark.vy), 0.2); this.finishBatch(this.sparks, n);
-    n = 0; for (const pickup of sim.pickups) if (pickup.active && !menu) this.instance(this.pickupMesh, n++, pickup.x, pickup.y, 0.8 + Math.sin(elapsed * 5) * 0.1, elapsed * 2, 0.6); this.finishBatch(this.pickupMesh, n);
+    n = 0;let pulses=0,labels=0;
+    for (const pickup of sim.pickups) if (pickup.active && !menu) {
+      const isPulse=pickup.pickupType==='pulse';this.instance(isPulse?this.pulsePickupMesh:this.pickupMesh,isPulse?pulses++:n++,pickup.x,pickup.y,.9,elapsed*2,.6);
+      this.vector.set(pickup.x,1,-pickup.y).project(this.camera);const label=this.pickupLabels[labels++];label.hidden=false;label.textContent=isPulse?'B · PULSE':'P · POWER';label.dataset.type=isPulse?'pulse':'power';label.style.transform=`translate(${(this.vector.x*.5+.5)*this.width}px,${(-this.vector.y*.5+.5)*this.height-16}px) translateX(-50%)`;
+    }
+    this.pickupLabels.slice(labels).forEach(label=>label.hidden=true);this.finishBatch(this.pickupMesh,n);this.finishBatch(this.pulsePickupMesh,pulses);
+    for(const reward of this.rewardLabels){reward.label.hidden=menu||reward.until<performance.now();if(!reward.label.hidden){this.vector.set(reward.x,1,-reward.y).project(this.camera);reward.label.style.transform=`translate(${(this.vector.x*.5+.5)*this.width}px,${(-this.vector.y*.5+.5)*this.height-(1-(reward.until-performance.now())/1800)*35}px) translateX(-50%)`;}}
     for (const target of sim.targets) {
       const { group, label, bar, relay, shield } = this.targets.get(target.id);
       group.position.z = -(menu ? target.anchorY : target.y);
@@ -343,7 +371,7 @@ export class GameRenderer {
       group.userData.wreck.visible = destroyed;
       if (group.userData.imported) {
         group.userData.intact.visible = !destroyed; group.userData.moving.visible = !destroyed;
-        const opening = !menu && !destroyed && target.nextAt - sim.time < 1.5;
+        const opening = !menu && !destroyed && (target.nextAt - sim.time < 1.5 || sim.time-target.lastLaunchAt<1.8);
         for (const door of group.userData.doors) {
           const closed = door.userData.closedX;
           door.position.x = THREE.MathUtils.damp(door.position.x, closed + (opening ? Math.sign(closed) * 1.1 : 0), 7, visualDelta);
@@ -353,7 +381,7 @@ export class GameRenderer {
       group.userData.light.emissiveIntensity = destroyed ? 0 : target.flash > 0 ? 4 : 1.2;
       group.userData.light.color.setHex(destroyed ? 0x1a2529 : 0xe7bd71);
       if (group.userData.door) {
-        const opening = !menu && !destroyed && target.nextAt - sim.time < 1.5;
+        const opening = !menu && !destroyed && (target.nextAt - sim.time < 1.5 || sim.time-target.lastLaunchAt<1.8);
         const door = group.userData.door; door.visible = !destroyed;
         door.scale.z = THREE.MathUtils.damp(door.scale.z, opening ? 0.18 : 0.9, 7, visualDelta);
         door.position.z = THREE.MathUtils.damp(door.position.z, opening ? -1 : 0, 7, visualDelta);

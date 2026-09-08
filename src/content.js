@@ -1,5 +1,9 @@
 // Content is independent of the renderer and simulation. Add missions here, or
 // register them at startup; stable IDs keep saved progress compatible with updates.
+import { campaignWaves } from './encounters.js';
+import { sceneryColliders } from './sector-layout.js';
+import nesisColliders from './nesis-colliders.json' with { type: 'json' };
+
 export const WEAPONS = Object.freeze({
   vulcan: { name: 'VULCAN', interval: 0.16, damage: 0.75, speed: 27, spread: [-0.09, 0, 0.09], color: 0x9cffe4 },
   laser: { name: 'LANCE', interval: 0.11, damage: 1.65, speed: 40, spread: [0], color: 0x8ed6ff },
@@ -152,7 +156,7 @@ function campaignBlueprints() {
     target('node-starboard', 'core', 4.4, 70, { hp: 90, label: 'STARBOARD COMMAND NODE', attack: 'missiles' }),
   ], { assault: true, completion: ['node-port', 'node-starboard'], reinforcements: ['anchorage-dock-port', 'anchorage-dock-starboard'] });
   const nesis = segment('flagship', 'NESIS / FLAGSHIP ASSAULT', {
-    ...FIRST_MISSION.environment, variant: 'nesis', surfaceY: -.85,
+    ...FIRST_MISSION.environment, variant: 'nesis', surfaceY: -.85, collisionHull: nesisColliders,
   }, 75, FIRST_MISSION.targets.map(t => ({ ...t, socketId: t.id, startAt: 0,
     controllerId: ['battery', 'core'].includes(t.kind) ? 'turret-a' : undefined,
   })), { assault: true, completion: ['core'], reinforcements: ['bay-a', 'bay-b'],
@@ -189,25 +193,22 @@ export function compileCampaign(seed = 417) {
     if (allIds.size !== segments.reduce((n, s) => n + s.targets.length, 0)) throw new Error('Duplicate campaign target');
     const qualify = id => `${meta.id}:${id}`;
     const compiled = segments.map((s, index) => {
-      const patterns = ['scout-vee', 'scout-gap', 'scout-sweep', 'crossfire', 'interceptor-pair', 'bomber-escort'];
       const encounterRandom = s.assault ? seededRandom(990 + levelIndex) : random;
-      const waves = [];
-      for (let at = .8, beat = 0; at < s.duration - 3; beat++) {
-        waves.push({ at, pattern: patterns[Math.floor(encounterRandom() * (levelIndex === 0 && index === 0 ? 4 : patterns.length))], side: encounterRandom() < .5 ? -1 : 1 });
-        // A short rest every fifth formation, without empty travel stretches.
-        at += beat % 5 === 4 ? 5.5 : 3.6 - levelIndex * .18;
-      }
+      const waves = campaignWaves(encounterRandom, s.duration, levelIndex, s.assault);
       for (const sourceBay of s.reinforcements || []) {
         if (!allIds.has(sourceBay)) throw new Error(`Unknown reinforcement bay: ${sourceBay}`);
         for (let at = 9; at < s.duration - 3; at += 12) waves.push({ at, pattern: 'scout-gap', sourceBay: qualify(sourceBay), side: 1 });
       }
       const targets = s.targets.map(t => ({ ...t, id: qualify(t.id),
+        interval: t.interval * (t.kind==='battery'?.78:t.kind==='launcher'?.75:t.kind==='core'?.7:1),
         gates: t.gates?.map(qualify), controllerId: t.controllerId ? qualify(t.controllerId) : undefined,
         supportIds: t.supportIds?.map(qualify),
       }));
       const environment = { ...s.environment, seed: (seed ^ Math.imul(100 + levelIndex * 10 + index, 7919)) >>> 0 };
       return { ...s, id: `${meta.id}/${s.id}`, title: meta.title, campaign: true, segmentIndex: index,
-        environment, combatSeed: (seed ^ Math.imul(1 + levelIndex * 10 + index, 3571)) >>> 0,
+        environment, obstacles: sceneryColliders(environment, seededRandom(environment.seed)).map(o=>({...o,id:`${meta.id}/${s.id}/${o.id}`})),
+        combat: { maxEnemies: 30, fireInterval: 1 - levelIndex * .055, bulletSpeed: 1 + levelIndex * .065 },
+        combatSeed: (seed ^ Math.imul(1 + levelIndex * 10 + index, 3571)) >>> 0,
         targets, waves: waves.sort((a, b) => a.at - b.at),
         completion: s.completion?.map(qualify),
         boss: s.boss ? { ...s.boss, coolantId: qualify(s.boss.coolantId) } : undefined,
