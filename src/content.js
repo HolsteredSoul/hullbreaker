@@ -5,9 +5,9 @@ import { sceneryColliders } from './sector-layout.js';
 import nesisColliders from './nesis-colliders.json' with { type: 'json' };
 
 export const WEAPONS = Object.freeze({
-  vulcan: { name: 'VULCAN', interval: 0.16, damage: 0.75, speed: 27, spread: [-0.09, 0, 0.09], color: 0x9cffe4 },
-  laser: { name: 'LANCE', interval: 0.11, damage: 1.65, speed: 40, spread: [0], color: 0x8ed6ff },
-  homing: { name: 'SEEKER', interval: 0.25, damage: 1.45, speed: 20, spread: [-0.04, 0.04], color: 0xffd293 },
+  vulcan: { name: 'VULCAN', interval: 0.16, damage: 0.75, speed: 27, spread: [-0.09, 0, 0.09], color: 0xff896f },
+  laser: { name: 'LANCE', interval: 0.11, damage: 1.65, speed: 40, spread: [0], color: 0x79cfff },
+  homing: { name: 'SEEKER', interval: 0.25, damage: 1.45, speed: 20, spread: [-0.04, 0.04], color: 0xd5a2ff },
 });
 
 export const missions = new Map();
@@ -199,7 +199,12 @@ export function compileCampaign(seed = 417) {
         if (!allIds.has(sourceBay)) throw new Error(`Unknown reinforcement bay: ${sourceBay}`);
         for (let at = 9; at < s.duration - 3; at += 12) waves.push({ at, pattern: 'scout-gap', sourceBay: qualify(sourceBay), side: 1 });
       }
-      const targets = s.targets.map(t => ({ ...t, id: qualify(t.id),
+      const targets = s.targets.map(t => ({ ...t,
+        // Campaign batteries occupy real deck mounts inside the clear firing lane.
+        // Legacy Nesis retains its outboard battery/link layout for regression.
+        ...(t.kind === 'battery' ? { x: Math.sign(t.x) * 4.9, mountX: Math.sign(t.x) * 4.9, mountY: -.55, scale: 1, label: `${t.x < 0 ? 'PORT' : 'STBD'} TURRET` } : {}),
+        socketPosition: t.kind === 'battery' && t.socketId ? [t.mountX, t.mountY, -t.y] : undefined,
+        id: qualify(t.id),
         interval: t.interval * (t.kind==='battery'?.78:t.kind==='launcher'?.75:t.kind==='core'?.7:1),
         gates: t.gates?.map(qualify), controllerId: t.controllerId ? qualify(t.controllerId) : undefined,
         supportIds: t.supportIds?.map(qualify),

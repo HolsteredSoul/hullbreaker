@@ -57,8 +57,10 @@ registerEnvironment('capital', (definition) => {
         const node = gltf.scene.getObjectByName(`socket_${(target.socketId || target.id).replaceAll('-', '_')}`);
         if (!node) throw new Error(`Missing target socket ${target.id}`);
         const position = node.getWorldPosition(new THREE.Vector3());
-        if (position.distanceTo(new THREE.Vector3(target.x, target.y ?? -0.55, target.z)) > 0.02) throw new Error(`Misaligned socket ${target.id}`);
-        targetBindings.set(target.id, { position: position.toArray(), node });
+        const mount = [target.x, target.y ?? -.55, target.z];
+        // A campaign may relocate a weapon while still validating the original hull socket.
+        if (position.distanceTo(new THREE.Vector3(...(target.socketPosition || mount))) > 0.02) throw new Error(`Misaligned socket ${target.id}`);
+        targetBindings.set(target.id, { position: mount, node });
       }
       gltf.scene.traverse(node => {
         if (!node.name.startsWith('engine_') || !node.userData.radius) return;

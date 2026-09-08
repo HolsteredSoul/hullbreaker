@@ -28,13 +28,23 @@ Every extra pass raises bullet speed by 4% and reduces firing intervals by 8%, c
 
 ## Lives, score and mastery
 
-Start with three lives, a level-one selected weapon and two pulses. One unprotected hit destroys the fighter. A replacement arrives after one second with 2.5 seconds of invulnerability, one weapon-level downgrade (minimum one) and at least two pulses. Combat continues during the replacement interval. The final death ends the run.
+Start with three lives, a level-one selected weapon, one hull point, no shields and two pulses. Shields absorb hits first without reducing power (one second of protection); hull damage reduces power by one and gives 1.7 seconds of protection. A basic hull still dies in one unprotected hit. A replacement arrives after one second with 2.5 seconds of protection, level-one power, basic hull, no shields and at least two pulses. Combat continues during replacement; clearing during this interval supplies the replacement before progression. The final death ends the run.
 
-Supply and score carry between levels. Level clear gives one weapon upgrade, one pulse (cap three), 5,000 points plus 500 per surviving life, 3,000 for no deaths, and 1,500 for a first-pass clear. An upgrade at full power gives another 1,500 points. The clear screen itemizes the award. Extra lives at 50,000 and 150,000 points are awarded once each per run.
+The selected weapon, current hull and capacity, shield charges, power reserve, pulses, lives and score carry between levels. Level clear gives one weapon upgrade, one pulse (cap three), 5,000 points plus 500 per surviving life, 3,000 for no deaths, and 1,500 for a first-pass clear. An upgrade at full power gives another 1,500 points. The clear screen itemizes the award. Extra lives at 50,000 and 150,000 points are awarded once each per run.
 
 Clear rank: S for no deaths and a first-pass finish; A for at most one death and two passes; B for at most two deaths; otherwise C. Kill chains expire after three seconds, reset on damage and score up to ×4. Destroying an entire authored squad earns 400–800 points once; escapes, terrain crashes and incomplete spawns cancel that squad bonus. Enemy classes have different kill values.
 
-Supply craft carry alternating power/pulse rewards; bays drop power. A power cell also drops after 18 kills without a supply-craft power award. Cells move toward the player at a reachable speed and attract within 3.2 units. Green P upgrades the selected weapon and gives 500 points, or 1,500 at maximum power. Amber B restores a pulse and gives 250 points, or 1,000 when pulses are full. Collection is once-only. Pulse kills use the same kill accounting as normal fire.
+Supply escorts appear every five encounter blocks, including assaults, cycling weapon / shield / hull / power / pulse roles with a level offset. Weapon crates rotate V / L / M across the run. Bays and the 18-kill recovery award still drop P. Cells fall at a reachable speed and attract within 3.2 units, except a different weapon crate: switching requires deliberate contact. Collection and bonuses are once-only. Pulse kills use normal kill accounting.
+
+| Pickup | Colour | Effect | Score |
+|---|---|---|---|
+| V / L / M | Red / blue / violet | Vulcan / Lance / Seeker; matching increases tier and refills reserve, different resets tier to one | 500; matching at max 1,500 |
+| P | Green | +1 tier and full boost reserve | 500; at max 1,500 |
+| S | Cyan | +1 shield hit, cap two | 250; full 1,000 |
+| H | Gold | +1 hull capacity, cap three, and full repair | 250; already fully repaired at cap 1,000 |
+| B | Orange | +1 pulse, cap three | 250; full 1,000 |
+
+Each boosted tier has 24 seconds of actual firing reserve. Depletion drops one tier and reloads its reserve; tier one never runs dry. Pause, turnaround and respawn do not drain power. Hull damage drops one tier and reloads the reserve; shield damage preserves it. The original HTML weapon-match/reset mechanic informs this system. Shields, hull capacity and the boost reserve are new Hullbreaker mechanics.
 
 Vulcan tiers fire 3/5/7 streams with increasing spread and cadence. Lance tiers fire 1/2/3 thicker parallel beams; higher tiers pierce additional fighters once each. Seeker tiers launch 2/4/6 missiles and split their target locks. Piercing weapons still stop at solid terrain. The HUD shows the current tier and firing pattern.
 
@@ -47,3 +57,5 @@ Preserve the 60-degree perspective, fixed combat-space bounds, keyboard precisio
 Modular scenery creates distinct cruisers, carriers, station structures and moon installations. Blender supplies seven additional assets: bridge, pylon, refinery, radar, wreck, gunship and supply craft. The existing Nesis GLB remains the flagship. Incoming scenery is previewed and reused at the transition. Outgoing scenery retires and is disposed; late GLB responses cannot attach to retired environments.
 
 Around 40 FPS remains the baseline target, with 60 aspirational. Visual quality reduces resolution and decorative effects without changing combat. Human pacing/difficulty review and physical-device performance remain acceptance work; automated protected-pilot tests establish weapon feasibility rather than human mastery.
+
+Campaign side batteries now sit on actual inboard mounts at X ±4.9; visual turrets, aim points and collision agree. Remote targeting links are legacy-only. Moon rock placement reserves the full rotated rock bounds outside the combat lane. Mobile portrait and short touch landscape use a two-row HUD, short objective status, letter-coded pickups and a single bottom notice. Route description, flight time, sound and the pickup guide are available in pause.

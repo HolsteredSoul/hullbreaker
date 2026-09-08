@@ -1,6 +1,6 @@
 import { WEAPONS, DIFFICULTIES, seededRandom } from './content.js';
 import { SQUADS } from './encounters.js';
-import { weaponTier, upgradeWeapon } from './weapon-progression.js';
+import { weaponTier, upgradeWeapon, collectWeapon, depletePower, POWER_RESERVE, PICKUPS } from './weapon-progression.js';
 import { sweepBox, sweepCircle } from './collision.js';
 
 export const FIELD = Object.freeze({ minX: -8, maxX: 8, minY: -9, maxY: 12 });
@@ -28,6 +28,7 @@ export class Simulation {
     this.waveIndex = 0; this.recoveryIndex = 0; this.bossPhase = 1; this.phaseStarted = mission.boss?.at ?? 0; this.transitionUntil = 0;
     this.time = 0; this.distance = 0; this.status = 'playing'; this.score = 0; this.kills = 0; this.level = 1;
     this.chain = 0; this.chainUntil = 0;
+    this.powerReserve = POWER_RESERVE; this.weaponDropIndex = 0;
     this.random = seededRandom(mission.combatSeed ?? mission.environment.seed);
     this.fxRandom = seededRandom(mission.environment.seed ^ 0xabcdef);
     this.player = { x: 0, y: -6, health: this.maxHealth, bombs: 2, invulnerable: 1.5, cooldown: 0 };
@@ -204,12 +205,26 @@ export class Simulation {
     wave.remaining--;if(!killed)wave.clean=false;
     if(wave.remaining<=0){if(wave.clean){this.score+=wave.bonus;this.emit('formation-clear',{bonus:wave.bonus,x:enemy.x,y:enemy.y});}this.formations.delete(enemy.waveId);}
   }
-  dropPickup(x,y,pickupType='power') { return obtain(this.pickups,{x:clamp(x,-7,7),y,life:14,pickupType}); }
+  dropPickup(x,y,pickupType='power') {
+    // Fixed weapon crates are deliberately collected or avoided; magnets never force a switch.
+    if (pickupType === 'weapon') pickupType = ['vulcan', 'laser', 'homing'][this.weaponDropIndex++ % 3];
+    if (!PICKUPS[pickupType]) return null;
+    return obtain(this.pickups,{x:clamp(x,-7,7),y,life:14,pickupType});
+  }
   collectPickup(pickup) {
-    if(!pickup.active||this.player.health<=0)return;
+    if(!pickup?.active||this.player.health<=0||this.status!=='playing'||this.turnRemaining>0)return;
     pickup.active=false;
     if(!this.mission.campaign){this.player.health=Math.min(this.maxHealth,this.player.health+1);this.score+=500;this.level=Math.min(3,this.level+1);this.emit('pickup');return;}
-    if(pickup.pickupType==='pulse'){
+    if(WEAPONS[pickup.pickupType]) collectWeapon(this,pickup.pickupType);
+    else if(pickup.pickupType==='shield'){
+      const maxed=this.player.shields>=2,bonus=maxed?1000:250;
+      this.player.shields=Math.min(2,(this.player.shields||0)+1);this.score+=bonus;
+      this.emit('shield-pickup',{bonus,maxed,shields:this.player.shields});
+    }else if(pickup.pickupType==='hull'){
+      const maxed=this.maxHealth>=3&&this.player.health>=3,bonus=maxed?1000:250;
+      this.maxHealth=Math.min(3,this.maxHealth+1);this.player.health=this.maxHealth;this.score+=bonus;
+      this.emit('hull-pickup',{bonus,maxed,health:this.player.health});
+    }else if(pickup.pickupType==='pulse'){
       const maxed=this.player.bombs>=3,bonus=maxed?1000:250;this.player.bombs=Math.min(3,this.player.bombs+1);this.score+=bonus;
       this.emit('pulse-pickup',{bonus,maxed});
     }else upgradeWeapon(this);
@@ -239,7 +254,7 @@ export class Simulation {
         missile:this.weapon==='homing',homing:this.weapon==='homing',targetId:targets.length?targets[i%targets.length].id:null,
         pierce:tier.pierce||0,hitIds:new Set(),width:tier.width,weapon:this.weapon});
     }
-    this.player.cooldown+=tier.interval;this.emit('fire');
+    this.player.cooldown+=tier.interval;depletePower(this,tier.interval);this.emit('fire');
   }
   updateCampaignEnemy(enemy,dt){
     const oldX=enemy.x,oldY=enemy.y,player=this.player;
@@ -440,7 +455,8 @@ export class Simulation {
     for (const pickup of this.pickups) if (pickup.active) {
       pickup.age += dt; pickup.y -= dt * (this.mission.campaign?4.2:1.2);
       const distance=Math.hypot(pickup.x-player.x,pickup.y-player.y);
-      if(this.mission.campaign&&player.health>0&&distance<3.2){pickup.x+=(player.x-pickup.x)*Math.min(1,dt*7);pickup.y+=(player.y-pickup.y)*Math.min(1,dt*7);}
+      const changesWeapon=!!WEAPONS[pickup.pickupType]&&pickup.pickupType!==this.weapon;
+      if(this.mission.campaign&&!changesWeapon&&player.health>0&&distance<3.2){pickup.x+=(player.x-pickup.x)*Math.min(1,dt*7);pickup.y+=(player.y-pickup.y)*Math.min(1,dt*7);}
       if (player.health > 0 && Math.hypot(pickup.x - player.x, pickup.y - player.y) < 1.3) this.collectPickup(pickup);
       if (pickup.age > pickup.life || pickup.y < -12) pickup.active = false;
     }

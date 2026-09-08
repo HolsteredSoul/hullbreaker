@@ -4,7 +4,7 @@ import { CampaignRun } from './campaign.js';
 import { GameRenderer } from './renderer.js';
 import { Input } from './input.js';
 import { Audio } from './audio.js';
-import { weaponTier } from './weapon-progression.js';
+import { weaponTier, POWER_RESERVE, PICKUPS } from './weapon-progression.js';
 
 const $ = selector => document.querySelector(selector);
 const saveKey = 'raiden-hullbreaker-v1';
@@ -33,19 +33,40 @@ if (renderer) {
   function notice(message) { $('#announcement').textContent = message; $('#announcement').classList.add('visible'); noticeUntil = performance.now() + 3400; }
   function updateHud() {
     $('#health').textContent = '◆ '.repeat(Math.max(0, sim.lives)); $('#health').setAttribute('aria-label', `${sim.lives} lives remaining`);
+    $('#hull-status').textContent = 'HULL ' + '▰'.repeat(sim.player.health) + '▱'.repeat(sim.maxHealth-sim.player.health) + ' / ' + sim.maxHealth;
+    $('#shield-status').textContent = 'SHIELD ' + '◆'.repeat(sim.player.shields) + '◇'.repeat(2-sim.player.shields);
+    $('#charge-fill').style.width = (sim.level === 1 ? 100 : sim.powerReserve / POWER_RESERVE * 100) + '%';
+    $('#charge-label').textContent = sim.level === 1 ? 'BASE FIRE · UNLIMITED' : 'BOOST ' + Math.ceil(sim.powerReserve) + 's · P TO RECHARGE';
+    $('#charge-track').classList.toggle('low', sim.level > 1 && sim.powerReserve < 6);
+    $('#weapon-label').style.color = '#' + PICKUPS[sim.weapon].color.toString(16);
     $('#score').textContent = String(sim.score).padStart(6, '0');
     $('#chain').textContent = sim.chain ? `${sim.chain} CHAIN · ×${Math.min(4, 1 + Math.floor(sim.chain / 5))}` : 'CLEAN CLEAR +3000 · FIRST PASS +1500';
     $('#timer').textContent = clock(sim.campaignTime); $('#progress').style.width = `${sim.progress * 100}%`;
     $('#weapon-label').textContent = `${WEAPONS[sim.weapon].name} ${'▰'.repeat(sim.level)}${'▱'.repeat(3-sim.level)}`;
     $('#power-detail').textContent=weaponTier(sim.weapon,sim.level).name;
+    $('#mobile-lives').textContent = '◆ '+sim.lives;
+    $('#mobile-lives').setAttribute('aria-label',sim.lives+' lives');
+    $('#mobile-hull').textContent = 'H '+sim.player.health+'/'+sim.maxHealth;
+    $('#mobile-hull').setAttribute('aria-label','Hull '+sim.player.health+' of '+sim.maxHealth);
+    $('#mobile-shield').textContent = 'S '+sim.player.shields+'/2';
+    $('#mobile-shield').setAttribute('aria-label',sim.player.shields+' shield hits');
+    $('#mobile-score').textContent = sim.score.toLocaleString();
+    $('#mobile-weapon').textContent = WEAPONS[sim.weapon].name+' '+sim.level+(sim.level>1?' · '+Math.ceil(sim.powerReserve)+'s':'');
+    $('#mobile-weapon').style.color = '#'+PICKUPS[sim.weapon].color.toString(16);
+    $('#mobile-route').textContent = (run.levelIndex+1)+'/5 · '+(sim.mission.assault?'PASS '+sim.pass:'ROUTE '+(sim.segmentIndex+1));
+    $('#mobile-charge i').style.width = (sim.level===1?100:sim.powerReserve/POWER_RESERVE*100)+'%';
+    $('#mobile-charge').classList.toggle('low',sim.level>1&&sim.powerReserve<6);
     $('#bomb-count').textContent = sim.player.bombs; $('#bomb').disabled = !sim.controlsEnabled || sim.player.bombs <= 0;
     $('#sector').textContent = `${String(run.levelIndex + 1).padStart(2, '0')} / 05 · ${sim.definition.title.toUpperCase()}`;
     $('#bay-a').textContent = sim.mission.name;
     $('#bay-b').textContent = sim.mission.assault ? `ATTACK PASS ${sim.pass}${sim.pass > 1 ? ' · DEFENSES ALERT' : ''}` : `${sim.segmentIndex + 1} / ${sim.definition.segments.length} ROUTE`;
     const objectives = (sim.mission.completion || []).map(id => sim.targetById(id)), remaining = objectives.filter(t => !t?.destroyed);
+    $('#mobile-objective').hidden = !sim.mission.assault;
+    $('#mobile-objective').textContent = remaining.length+' TARGET'+(remaining.length===1?'':'S')+' LEFT';
     const core = sim.targets.find(t => t.kind === 'core');
     let objective = sim.definition.description;
     if (objectives.length) objective = `${objectives.length - remaining.length}/${objectives.length} OBJECTIVES · ${remaining.map(t => t.label).join(' / ') || 'ASSAULT COMPLETE'}`;
+    if(core && sim.mission.boss) $('#mobile-objective').textContent = 'CORE '+sim.bossPhase+'/3 · '+sim.bossState.toUpperCase();
     if (core && sim.mission.boss) objective = `CORE ${sim.bossPhase}/3 · ${sim.bossState.toUpperCase()} · ${Math.ceil(core.hp)} HP`;
     if (core?.gates) objective = `FEEDERS ${core.gates.filter(id => sim.targetById(id)?.destroyed).length}/${core.gates.length} · HUB ${sim.isTargetShielded(core) ? 'SHIELDED' : 'EXPOSED'}`;
     if (sim.turnRemaining > 0) objective = `BREAKAWAY · RETURNING FOR PASS ${sim.pass + 1} · DAMAGE PRESERVED`;
@@ -86,6 +107,7 @@ if (renderer) {
   function openDialog(title, copy, paused = false) {
     input.clear(); $('#dialog').hidden = false; $('#dialog-title').textContent = title; $('#dialog-copy').textContent = copy;
     $('#dialog-eyebrow').textContent = paused ? 'FLIGHT SUSPENDED' : run.practice ? 'PRACTICE' : sim.status === 'won' ? 'LEVEL COMPLETE' : 'GAME OVER';
+    $('#pickup-help').hidden = !paused;
     $('#resume').hidden = !paused; $('#result-stats').hidden = paused;
     $('#next-level').hidden = paused || sim.status !== 'won' || run.practice || run.levelIndex === 4;
     $('#retry').textContent = run.practice ? 'RETRY PRACTICE' : 'NEW CAMPAIGN';
@@ -97,7 +119,7 @@ if (renderer) {
   function pause(reason) {
     if (mode !== 'playing') return;
     mode = 'paused'; accumulator = 0; $('#pause').textContent = '▶'; $('#pause').setAttribute('aria-label', 'Resume game');
-    openDialog('HOLD POSITION.', reason || 'Your fighter, attack pass and remaining lives are held here.', true);
+    openDialog('HOLD POSITION.', reason || sim.mission.name+'. '+sim.definition.description+' Flight time '+clock(sim.campaignTime)+'. Match weapon crates to build power; collect S and H to protect your fighter.', true);
   }
   function resume() {
     if (mode !== 'paused') return;
@@ -114,18 +136,27 @@ if (renderer) {
         if (!run.practice) { settings.reached[sim.definition.id] = Math.max(Number(settings.reached[sim.definition.id]) || 0, sim.segmentIndex); persist(); }
       }
       if (event.type === 'turnaround') { input.clear(); notice('BANKING OUT · RE-APPROACH · DAMAGE PRESERVED'); }
-      if (event.type === 'life-lost') { input.clear(); notice(`${event.lives} ${event.lives === 1 ? 'LIFE' : 'LIVES'} REMAINING · WEAPON RECOVERING`); }
+      if (event.type === 'life-lost') { input.clear(); notice(`${event.lives} ${event.lives === 1 ? 'LIFE' : 'LIVES'} REMAINING · POWER AND HULL RESET`); }
       if (event.type === 'respawn') { input.clear(); notice('REPLACEMENT READY · BRIEF SHIELD PROTECTION'); }
       if (event.type === 'extra-life') notice(`EXTRA LIFE · ${event.threshold.toLocaleString()} POINTS`);
       if (event.type === 'boss-phase') notice(`CORE PHASE ${event.phase}/3 · SHIELD REBUILDING`);
       if (event.type === 'target-destroyed') notice(event.kind === 'bay' ? `${event.label} DISABLED · FEWER REINFORCEMENTS` : `${event.label} DESTROYED`);
       if (event.type === 'pickup') notice(sim.level === 3 ? 'WEAPON AT FULL POWER · SCORE BONUS' : 'WEAPON UPGRADED');
       if(event.type==='power-up'){
-        notice(event.maxed?`MAX POWER BONUS +${event.bonus}`:`POWER ${event.previous} → ${event.level} · ${event.name}`);
+        notice(event.maxed?`BOOST RECHARGED · MAX POWER +${event.bonus}`:`POWER ${event.previous} → ${event.level} · ${event.name}`);
         renderer.showReward(event.maxed?`MAX +${event.bonus}`:`POWER ${event.level} · ${event.name}`,sim.player.x,sim.player.y);
       }
+      if(event.type==='weapon-change'){notice(WEAPONS[event.weapon].name+' SELECTED · POWER RESET TO 1');renderer.showReward(WEAPONS[event.weapon].name+' · +500',sim.player.x,sim.player.y);}
+      if(event.type==='power-depleted')notice('BOOST DEPLETED · POWER '+event.level+' · COLLECT P');
+      if(event.type==='shield-hit')notice('SHIELD ABSORBED HIT · '+event.shields+' LEFT');
+      if(event.type==='hull-hit')notice('HULL DAMAGED · POWER '+sim.level);
+      if(event.type==='shield-pickup'||event.type==='hull-pickup'){
+        const name=event.type==='shield-pickup'?'SHIELD':'HULL';
+        const message=event.maxed?name+' FULL · +1000':name==='HULL'?'HULL UPGRADED / REPAIRED':'SHIELD +1';
+        notice(message);renderer.showReward(message,sim.player.x,sim.player.y);
+      }
       if(event.type==='pulse-pickup'){notice(event.maxed?'PULSES FULL · +1000':'PULSE RESTORED');renderer.showReward(event.maxed?'+1000':'PULSE +1',sim.player.x,sim.player.y);}
-      if(event.type==='formation-clear')renderer.showReward(`SQUAD CLEAR +${event.bonus}`,Math.max(-5,Math.min(5,event.x)),Math.max(-5,Math.min(10,event.y)));
+      if(event.type==='formation-clear'&&!matchMedia('(max-width:600px), (max-height:500px) and (pointer:coarse)').matches)renderer.showReward(`SQUAD CLEAR +${event.bonus}`,Math.max(-5,Math.min(5,event.x)),Math.max(-5,Math.min(10,event.y)));
       if (event.type === 'level-clear' || event.type === 'game-over') {
         mode = 'ended'; $('#pause').hidden = true;
         if (!run.practice) {
@@ -169,7 +200,8 @@ if (renderer) {
   }));
   $('#difficulty').value = settings.difficulty;
   $('#difficulty').addEventListener('change', event => { settings.difficulty = event.target.value; persist(); updateMenu(); });
-  function soundLabel() { $('#sound').textContent = settings.muted ? 'SOUND OFF' : 'SOUND ON'; $('#sound').setAttribute('aria-label', settings.muted ? 'Enable sound' : 'Mute sound'); }
+  $('#pause-sound').addEventListener('click',()=>$('#sound').click());
+  function soundLabel() { $('#pause-sound').textContent=settings.muted?'SOUND OFF':'SOUND ON'; $('#sound').textContent = settings.muted ? 'SOUND OFF' : 'SOUND ON'; $('#sound').setAttribute('aria-label', settings.muted ? 'Enable sound' : 'Mute sound'); }
   $('#sound').addEventListener('click', () => { audio.unlock(); settings.muted = !settings.muted; audio.setMuted(settings.muted); soundLabel(); persist(); }); soundLabel();
   $('#quality').value = settings.quality;
   $('#quality').addEventListener('change', event => { settings.quality = event.target.value; renderer.setQuality(settings.quality); slowWindows = 0; persist(); });
@@ -177,7 +209,7 @@ if (renderer) {
   $('#motion').addEventListener('change', event => { settings.reducedMotion = event.target.checked; persist(); });
   $('#dialog').addEventListener('keydown', event => {
     if (event.key !== 'Tab') return;
-    const buttons = [...$('#dialog').querySelectorAll('button')].filter(button => !button.hidden), first = buttons[0], last = buttons.at(-1);
+    const buttons = [...$('#dialog').querySelectorAll('button')].filter(button => !button.hidden && button.getClientRects().length), first = buttons[0], last = buttons.at(-1);
     if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
     if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
   });

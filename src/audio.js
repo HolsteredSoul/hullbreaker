@@ -13,13 +13,13 @@ export class Audio {
   }
   setMuted(value) { this.muted = value; if (this.master) this.master.gain.setTargetAtTime(value ? 0 : 0.15, this.context.currentTime, 0.03); }
   play(type) {
-    type=({'power-up':'pickup','pulse-pickup':'pickup','formation-clear':'won'})[type]||type;
+    type=({'weapon-change':'pickup','shield-pickup':'pickup','hull-pickup':'pickup','shield-hit':'shield','hull-hit':'hit','power-depleted':'deplete','power-up':'pickup','pulse-pickup':'pickup','formation-clear':'won'})[type]||type;
     type = ({ 'life-lost': 'hit', 'respawn': 'pickup', 'extra-life': 'won', 'level-clear': 'won', 'game-over': 'hit', 'boss-phase': 'bomb', 'turnaround': 'pickup' })[type] || type;
     if (this.muted || !this.context || this.context.state !== 'running') return;
     const now = this.context.currentTime;
     if (type === 'fire' && now - this.lastShot < 0.15) return;
     if (type === 'fire') this.lastShot = now;
-    const tones = { fire: [500, 150, 0.055, 'triangle'], kill: [110, 35, 0.17, 'sawtooth'], 'target-destroyed': [85, 23, 0.5, 'sawtooth'], bomb: [130, 25, 0.7, 'sawtooth'], hit: [90, 30, 0.3, 'square'], pickup: [400, 1000, 0.28, 'sine'], won: [350, 1400, 0.6, 'sine'] };
+    const tones = { shield: [1100, 400, .2, 'sine'], deplete: [440, 220, .3, 'triangle'], fire: [500, 150, 0.055, 'triangle'], kill: [110, 35, 0.17, 'sawtooth'], 'target-destroyed': [85, 23, 0.5, 'sawtooth'], bomb: [130, 25, 0.7, 'sawtooth'], hit: [90, 30, 0.3, 'square'], pickup: [400, 1000, 0.28, 'sine'], won: [350, 1400, 0.6, 'sine'] };
     if (!tones[type]) return;
     const [from, to, duration, waveform] = tones[type];
     const oscillator = this.context.createOscillator(), gain = this.context.createGain();

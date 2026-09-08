@@ -101,6 +101,8 @@ test('every weapon can complete every authored assault through normal shots and 
   for (const weapon of ['vulcan', 'laser', 'homing']) for (let levelIndex = 0; levelIndex < 5; levelIndex++) {
     const last = compileCampaign(417)[levelIndex].segments.length - 1;
     const sim = new CampaignRun({ weapon, practiceLevel: levelIndex, practiceSegment: last }).sim;
+    // Hold the selected weapon constant for feasibility; pickup switching is tested separately.
+    for(const segment of sim.definition.segments)for(const wave of segment.waves)if(wave.rewardType==='weapon')wave.rewardType='power';
     for (let frame = 0; frame < 60 * 310 && sim.status === 'playing'; frame++) {
       sim.player.invulnerable = 100;
       const candidates = sim.targets.filter(t => sim.targetVisible(t) && !sim.isTargetShielded(t));
@@ -110,6 +112,7 @@ test('every weapon can complete every authored assault through normal shots and 
       sim.update(1 / 60, { x, y: sim.player.y > -6 ? -1 : 0 });
       if (frame % 60 === 0) assert.ok(sim.enemies.filter(e => e.active).length <= sim.mission.combat.maxEnemies, 'Fighter population remains bounded');
     }
+    assert.equal(sim.weapon,weapon);
     assert.equal(sim.status, 'won', `${weapon} / ${sim.definition.title}: ${sim.targets.filter(t => !t.destroyed).map(t => `${t.label} ${t.hp}`).join(', ')}`);
   }
 });

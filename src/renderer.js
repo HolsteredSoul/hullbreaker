@@ -7,7 +7,7 @@ import { loadCombatAssets, batchParts, findPart, COMBAT_ASSET_URL } from './comb
 import { disposeObject } from './scene-resources.js';
 import { returnPassPose } from './flight-path.js';
 import { loadCampaignArt } from './campaign-art.js';
-import { weaponTier } from './weapon-progression.js';
+import { weaponTier, PICKUPS } from './weapon-progression.js';
 
 function fighterGeometry() {
   const shape = new THREE.Shape();
@@ -59,8 +59,10 @@ export class GameRenderer {
     this.missiles = batch(this.scene, new THREE.ConeGeometry(0.17, 0.7, 5).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0xffd07f }), 1024);
     this.sparks = batch(this.scene, new THREE.BoxGeometry(0.09, 0.08, 0.4), new THREE.MeshBasicMaterial({ color: 0xffc880 }), 450);
     this.warnings = batch(this.scene, new THREE.BoxGeometry(0.075, 0.025, 6), new THREE.MeshBasicMaterial({ color: 0xffbe73, transparent: true, opacity: 0.7, depthWrite: false }), 128);
-    this.pickupMesh = batch(this.scene, new THREE.OctahedronGeometry(0.55), new THREE.MeshStandardMaterial({ color: 0xa1ffcf, emissive: 0x47c6a4, emissiveIntensity: 2 }), 12);
-    this.pulsePickupMesh=batch(this.scene,new THREE.OctahedronGeometry(.55),new THREE.MeshStandardMaterial({color:0xffc56a,emissive:0xdd751c,emissiveIntensity:1.5}),12);
+    this.pickupMesh = batch(this.scene, new THREE.OctahedronGeometry(.55), new THREE.MeshBasicMaterial({ color: 0xffffff, toneMapped: false }), 12);
+    this.pickupColor = new THREE.Color();
+    this.playerShield = new THREE.Mesh(new THREE.SphereGeometry(1.25, 20, 12), new THREE.MeshBasicMaterial({ color: PICKUPS.shield.color, transparent: true, opacity: .18, depthWrite: false }));
+    this.playerShield.scale.set(1, .45, 1.35); this.scene.add(this.playerShield);
     this.pickupLabels=Array.from({length:12},()=>{const label=document.createElement('div');label.className='pickup-label';label.hidden=true;container.append(label);return label;});
     this.rewardLabels=Array.from({length:10},()=>{const label=document.createElement('div');label.className='reward-label';label.hidden=true;container.append(label);return {label,until:0};});
     this.pulse = new THREE.Mesh(new THREE.RingGeometry(0.9, 1, 64), new THREE.MeshBasicMaterial({ color: 0xb9ffee, transparent: true, opacity: 0, side: THREE.DoubleSide, depthWrite: false })); this.pulse.rotation.x = -Math.PI / 2; this.scene.add(this.pulse);
@@ -118,11 +120,12 @@ export class GameRenderer {
     for(const kind of ['gunship','supply'])if(!this.enemyBatches.has(kind))this.enemyBatches.set(kind,this.campaignParts.get(kind).map(p=>batch(this.scene,p.geometry,p.material,64)));
   }
   showReward(text,x=0,y=2){
-    const item=this.rewardLabels.find(r=>r.until<performance.now())||this.rewardLabels[0];
+    const now=performance.now();
+    const item=this.rewardLabels.find(r=>r.until>now&&Math.hypot(r.x-x,r.y-y)<1.5)||this.rewardLabels.find(r=>r.until<now)||this.rewardLabels[0];
     Object.assign(item,{x,y,until:performance.now()+1800});item.label.textContent=text;
   }
   makeEnvironment(mission) {
-    return createEnvironment({ ...mission.environment, hardpoints: mission.targets.map(target => ({ id: target.id, socketId: target.socketId, x: target.mountX ?? target.x, y: target.mountY ?? -.55, z: -target.y, radius: target.radius })) });
+    return createEnvironment({ ...mission.environment, hardpoints: mission.targets.map(target => ({ id: target.id, socketId: target.socketId, socketPosition: target.socketPosition, x: target.mountX ?? target.x, y: target.mountY ?? -.55, z: -target.y, radius: target.radius })) });
   }
   setMission(mission, preserveOutgoing = false) {
     const oldEnvironment = this.environment;
@@ -222,7 +225,7 @@ export class GameRenderer {
       group.position.set(target.mountX ?? target.x, target.mountY ?? -0.55, -target.y); group.scale.setScalar(target.scale || 1); this.scene.add(group);
       const label = document.createElement('div'); label.className = 'target-label'; label.innerHTML = `${target.label}<div><i></i></div>`; label.hidden = true; labels.append(label);
       let relay = null, shield = null;
-      if (target.kind === 'battery') {
+      if (target.kind === 'battery' && target.mountX !== target.x) {
         relay = new THREE.Group();
         const node = new THREE.Mesh(new THREE.TorusGeometry(.65,.12,6,16), new THREE.MeshBasicMaterial({color:0xffbd70,depthTest:false})); node.rotation.x = Math.PI/2; relay.add(node);
         const link = new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(),new THREE.Vector3(target.mountX-target.x,.15,0)]),new THREE.LineBasicMaterial({color:0xffbd70,transparent:true,opacity:.6,depthTest:false})); relay.add(link); relay.renderOrder=4; this.scene.add(relay);
@@ -313,6 +316,9 @@ export class GameRenderer {
     this.player.rotation.x = 0; this.player.rotation.y = 0; this.player.rotation.order = 'YXZ';
     if (pose) { this.player.position.set(pose.x, pose.y, pose.z); this.player.rotation.set(pose.pitch, pose.heading, pose.bank, 'YXZ'); }
     this.player.visible = menu || sim.player.health > 0;
+    this.playerShield.visible = !menu && sim.player.health > 0 && sim.player.shields > 0;
+    this.playerShield.position.copy(this.player.position);
+    this.playerShield.material.opacity = sim.player.shields > 1 ? .26 : .14;
     for (const child of this.player.children.slice(0,-1)) child.visible = menu || sim.turnRemaining > 0 || sim.player.invulnerable <= 0 || Math.sin(elapsed * 30) > -.3;
     this.playerExhaust?.forEach((flame, i) => { flame.scale.z = this.settings.reducedMotion ? 1 : .85 + Math.sin(sceneTime * 18 + i) * .15; });
     let n = 0;
@@ -339,25 +345,30 @@ export class GameRenderer {
     }
     this.finishBatch(this.warnings, n);
     let f = 0, h = 0, m = 0;
-    this.friendly.material.color.setHex(WEAPONS[sim.weapon].color);
+    this.friendly.material.color.setHex(0xffffff);
     for (const shot of sim.shots) if (shot.active && !menu) {
       const angle = -Math.atan2(shot.vx, shot.vy);
       if (shot.friendly) {
-        this.temp.position.set(shot.x,0,-shot.y);this.temp.rotation.set(0,angle,0);this.temp.scale.set(shot.width||1,1,sim.weapon==='laser'?3:1.3);this.temp.updateMatrix();this.friendly.setMatrixAt(f++,this.temp.matrix);
+        this.friendly.setColorAt(f,this.pickupColor.setHex(WEAPONS[shot.weapon || sim.weapon].color));
+        this.temp.position.set(shot.x,0,-shot.y);this.temp.rotation.set(0,angle,0);this.temp.scale.set(shot.width||1,1,(shot.weapon || sim.weapon)==='laser'?3:1.3);this.temp.updateMatrix();this.friendly.setMatrixAt(f++,this.temp.matrix);
       }
       else if (shot.missile) { for (const mesh of this.missileBatches || [this.missiles]) this.instance(mesh, m, shot.x, shot.y, 1.3, angle, (shot.height || 0) * Math.max(0, 1 - shot.age / (shot.entry || 1))); m++; }
       else this.instance(this.hostile, h++, shot.x, shot.y, 1, angle, (shot.height || 0) * Math.max(0,1-shot.age/(shot.entry || 1)));
     }
+    if(this.friendly.instanceColor)this.friendly.instanceColor.needsUpdate=true;
     this.finishBatch(this.friendly, f); this.finishBatch(this.hostile, h); this.finishBatch(this.missiles, m);
     this.missileBatches?.forEach(mesh => this.finishBatch(mesh, m));
     n = 0; const maxSparks = this.quality === 'low' ? 90 : 450;
     for (const spark of sim.particles) if (spark.active && !menu && n < maxSparks) this.instance(this.sparks, n++, spark.x, spark.y, 1 - spark.age / spark.life, -Math.atan2(spark.vx, spark.vy), 0.2); this.finishBatch(this.sparks, n);
-    n = 0;let pulses=0,labels=0;
+    n = 0;let labels=0;
     for (const pickup of sim.pickups) if (pickup.active && !menu) {
-      const isPulse=pickup.pickupType==='pulse';this.instance(isPulse?this.pulsePickupMesh:this.pickupMesh,isPulse?pulses++:n++,pickup.x,pickup.y,.9,elapsed*2,.6);
-      this.vector.set(pickup.x,1,-pickup.y).project(this.camera);const label=this.pickupLabels[labels++];label.hidden=false;label.textContent=isPulse?'B · PULSE':'P · POWER';label.dataset.type=isPulse?'pulse':'power';label.style.transform=`translate(${(this.vector.x*.5+.5)*this.width}px,${(-this.vector.y*.5+.5)*this.height-16}px) translateX(-50%)`;
+      const style=PICKUPS[pickup.pickupType]||PICKUPS.power;
+      this.pickupMesh.setColorAt(n,this.pickupColor.setHex(style.color));
+      this.instance(this.pickupMesh,n++,pickup.x,pickup.y,.9,elapsed*2,.6);
+      this.vector.set(pickup.x,1,-pickup.y).project(this.camera);const label=this.pickupLabels[labels++];label.hidden=false;label.textContent=matchMedia('(max-width:600px), (max-height:500px) and (pointer:coarse)').matches?style.label[0]:style.label;label.dataset.type=pickup.pickupType;label.style.color=`#${style.color.toString(16).padStart(6,'0')}`;label.style.transform=`translate(${(this.vector.x*.5+.5)*this.width}px,${(-this.vector.y*.5+.5)*this.height-16}px) translateX(-50%)`;
     }
-    this.pickupLabels.slice(labels).forEach(label=>label.hidden=true);this.finishBatch(this.pickupMesh,n);this.finishBatch(this.pulsePickupMesh,pulses);
+    if(this.pickupMesh.instanceColor)this.pickupMesh.instanceColor.needsUpdate=true;
+    this.pickupLabels.slice(labels).forEach(label=>label.hidden=true);this.finishBatch(this.pickupMesh,n);
     for(const reward of this.rewardLabels){reward.label.hidden=menu||reward.until<performance.now();if(!reward.label.hidden){this.vector.set(reward.x,1,-reward.y).project(this.camera);reward.label.style.transform=`translate(${(this.vector.x*.5+.5)*this.width}px,${(-this.vector.y*.5+.5)*this.height-(1-(reward.until-performance.now())/1800)*35}px) translateX(-50%)`;}}
     for (const target of sim.targets) {
       const { group, label, bar, relay, shield } = this.targets.get(target.id);

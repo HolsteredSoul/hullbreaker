@@ -2,7 +2,11 @@
 export function sectorLayout(definition, random) {
   const type=definition.type, variant=definition.variant, pieces=[], engines=[];
   const box=(x,y,z,w,h,d,material=0,rotation=0)=>pieces.push({shape:'box',x,y,z,w,h,d,material,rotation});
-  const rock=(x,y,z,size,material=0)=>pieces.push({shape:'rock',x,y,z,w:size*2,h:size*1.4,d:size*2.8,material,rotation:random()*6});
+  const rock=(x,y,z,size,material=0)=>{
+    // Keep the full rotated rock bounds outside the authored combat deck.
+    const rotation=random()*6, halfWidth=size*Math.abs(Math.cos(rotation))+size*1.4*Math.abs(Math.sin(rotation));
+    pieces.push({shape:'rock',x:Math.sign(x)*Math.max(Math.abs(x),9+halfWidth),y,z,w:size*2,h:size*1.4,d:size*2.8,material,rotation});
+  };
   const add=(shape,x,y,z,w,h,d,material,rotation)=>pieces.push({shape,x,y,z,w,h,d,material,rotation});
   if (type === 'space') {
     if (variant === 'wreckage') {

@@ -11,13 +11,14 @@ export const SQUADS = {
 export function campaignWaves(random, duration, levelIndex, assault = false) {
   const choices = ['double-vee','pincer','gunship-screen','bomber-wall','sweeping-six','crossing-pair'];
   const result = [];
+  const supplies = ['weapon', 'shield', 'hull', 'power', 'pulse'];
   let last = -1;
   for (let at = .8, beat = 0; at < duration - 2; beat++) {
     let index = Math.floor(random() * choices.length);
     if (index === last) index = (index + 1) % choices.length;
-    const supply = !assault && beat % 8 === 3;
+    const supply = beat % 5 === 1;
     result.push({ at, pattern: supply ? 'supply-escort' : choices[index], side: random() < .5 ? -1 : 1,
-      rewardType: Math.floor(beat / 8) % 2 ? 'pulse' : 'power', bonus: 400 + levelIndex * 100 });
+      rewardType: supplies[(Math.floor(beat / 5) + levelIndex) % supplies.length], bonus: 400 + levelIndex * 100 });
     last = index;
     at += beat % 6 === 5 ? 3.6 : Math.max(1.65, 2.6 - levelIndex * .18) + random() * .35;
   }

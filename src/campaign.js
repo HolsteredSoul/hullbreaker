@@ -1,7 +1,7 @@
 import { CAMPAIGN, compileCampaign, seededRandom } from './content.js';
 import { Simulation, clamp } from './simulation.js';
 import { RETURN_TURN_SECONDS } from './flight-path.js';
-import { upgradeWeapon } from './weapon-progression.js';
+import { upgradeWeapon, POWER_RESERVE } from './weapon-progression.js';
 import { sweepBox } from './collision.js';
 
 // The run owns supplies and score. A simulation owns one level and its persistent
@@ -12,12 +12,15 @@ export class CampaignRun {
     this.levels = compileCampaign(this.seed); this.levelIndex = practiceLevel ?? 0;
     this.practice = practiceLevel !== null; this.practiceSegment = practiceSegment;
     this.score = 0; this.lives = 3; this.weaponLevel = 1; this.bombs = 2;
+    this.hull = 1; this.maxHull = 1; this.shields = 0; this.powerReserve = POWER_RESERVE; this.weaponDropIndex = 0;
     this.extraLivesAwarded = []; this.elapsed = 0; this.status = 'playing';
     this.sim = new CampaignSimulation(this.levels[this.levelIndex], this, practiceSegment);
   }
   capture(sim = this.sim) {
     this.score = sim.score; this.lives = sim.lives; this.bombs = sim.player.bombs;
     this.weaponLevel = sim.level; this.extraLivesAwarded = [...sim.extraLivesAwarded];
+    this.weapon = sim.weapon; this.powerReserve = sim.powerReserve; this.weaponDropIndex = sim.weaponDropIndex;
+    this.hull = sim.player.health; this.maxHull = sim.maxHealth; this.shields = sim.player.shields;
   }
   nextLevel() {
     if (this.sim.status !== 'won' || this.practice || this.levelIndex >= this.levels.length - 1) return false;
@@ -30,7 +33,8 @@ export class CampaignSimulation extends Simulation {
   constructor(definition, run, startSegment = 0) {
     super(definition.segments[startSegment], run.weapon, run.difficulty);
     this.definition = definition; this.run = run; this.segmentIndex = startSegment;
-    this.targetStates = new Map(); this.obstacleStates = new Map(); this.maxHealth = 1; this.player.health = 1;
+    this.targetStates = new Map(); this.obstacleStates = new Map(); this.maxHealth = run.maxHull; this.player.health = run.hull;
+    this.player.shields = run.shields; this.powerReserve = run.powerReserve; this.weaponDropIndex = run.weaponDropIndex;
     this.score = run.score; this.lives = run.lives; this.level = run.weaponLevel; this.player.bombs = run.bombs;
     this.extraLivesAwarded = [...run.extraLivesAwarded];
     this.levelTime = 0; this.pass = 1; this.turnRemaining = 0; this.respawnRemaining = 0;
@@ -86,6 +90,8 @@ export class CampaignSimulation extends Simulation {
   }
   completeLevel() {
     if (this.status !== 'playing') return;
+    // A final shot may clear the assault during the replacement interval.
+    if (this.player.health <= 0) { this.player.health = this.maxHealth; this.respawnRemaining = 0; this.player.invulnerable = 2.5; }
     this.status = 'won'; this.chain = 0;
     this.clearBonus = 5000 + this.lives * 500 + (this.deaths === 0 ? 3000 : 0) + (this.pass === 1 ? 1500 : 0);
     this.rank = this.deaths === 0 && this.pass === 1 ? 'S' : this.deaths <= 1 && this.pass <= 2 ? 'A' : this.deaths <= 2 ? 'B' : 'C';
@@ -103,8 +109,20 @@ export class CampaignSimulation extends Simulation {
   }
   damagePlayer() {
     if (!this.controlsEnabled || this.player.invulnerable > 0 || this.player.health <= 0) return;
+    this.chain = 0;
+    if (this.player.shields > 0) {
+      this.player.shields--; this.player.invulnerable = 1;
+      this.burst(this.player.x, this.player.y, 20, 'mint');
+      this.emit('shield-hit', { shields: this.player.shields }); return;
+    }
+    if (this.player.health > 1) {
+      this.player.health--; this.player.invulnerable = 1.7;
+      this.level = Math.max(1, this.level - 1); this.powerReserve = POWER_RESERVE;
+      this.burst(this.player.x, this.player.y, 24); this.emit('hull-hit', { health: this.player.health }); return;
+    }
     this.lives--; this.deaths++; this.player.health = 0; this.player.invulnerable = 0;
-    this.chain = 0; this.level = Math.max(1, this.level - 1); this.player.bombs = Math.max(2, this.player.bombs);
+    this.maxHealth = 1; this.player.shields = 0; this.level = 1; this.powerReserve = POWER_RESERVE;
+    this.player.bombs = Math.max(2, this.player.bombs);
     for (const shot of this.shots) if (!shot.friendly) shot.active = false;
     this.burst(this.player.x, this.player.y, 45); this.emit('life-lost', { lives: this.lives });
     if (this.lives <= 0) {

@@ -1,5 +1,15 @@
 // Arcade tiers change coverage and behavior, not only an invisible multiplier.
 export const MAX_POWER = 3;
+export const POWER_RESERVE = 24; // Seconds of boosted firing per tier; tier one is unlimited.
+export const PICKUPS = {
+  power: { label: 'P · POWER + CHARGE', color: 0xa1ffcf },
+  vulcan: { label: 'V · VULCAN', color: 0xff896f },
+  laser: { label: 'L · LANCE', color: 0x79cfff },
+  homing: { label: 'M · SEEKER', color: 0xd5a2ff },
+  shield: { label: 'S · SHIELD', color: 0x58e5ff },
+  hull: { label: 'H · HULL', color: 0xf6e28a },
+  pulse: { label: 'B · PULSE', color: 0xffbd70 },
+};
 const tiers = {
   vulcan: [
     { interval: .16, damage: .85, speed: 31, angles: [-.08, 0, .08], width: 1, name: 'TRIPLE SHOT' },
@@ -21,8 +31,26 @@ export function weaponTier(weapon, level) { return tiers[weapon][Math.max(0, Mat
 export function upgradeWeapon(sim, source = 'pickup') {
   const previous = sim.level;
   sim.level = Math.min(MAX_POWER, sim.level + 1);
+  sim.powerReserve = POWER_RESERVE;
   const bonus = previous === MAX_POWER ? 1500 : source === 'clear' ? 0 : 500;
   sim.score += bonus;
   sim.emit('power-up', { source, previous, level: sim.level, bonus, maxed: previous === MAX_POWER, name: weaponTier(sim.weapon, sim.level).name });
   return bonus;
+}
+
+export function collectWeapon(sim, weapon) {
+  if (weapon === sim.weapon) return upgradeWeapon(sim, 'matching-weapon');
+  const previous = sim.weapon;
+  sim.weapon = weapon; sim.level = 1; sim.powerReserve = POWER_RESERVE;
+  sim.player.cooldown = .1; sim.score += 500;
+  sim.emit('weapon-change', { previous, weapon, bonus: 500 });
+  return 500;
+}
+
+export function depletePower(sim, seconds) {
+  if (sim.level <= 1) return;
+  sim.powerReserve -= seconds;
+  if (sim.powerReserve > 0) return;
+  sim.level--; sim.powerReserve = POWER_RESERVE;
+  sim.emit('power-depleted', { level: sim.level });
 }
