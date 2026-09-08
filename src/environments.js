@@ -2,6 +2,8 @@ import * as THREE from 'three';
 import { buildCapitalHull } from './capital-hull.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { assetUrl } from './asset-url.js';
+import { buildSectorScenery } from './sector-scenery.js';
+import { disposeObject } from './scene-resources.js';
 
 
 // A scenery provider owns appearance only. Combat targets come from mission data.
@@ -15,7 +17,10 @@ export function createEnvironment(definition) {
 }
 
 registerEnvironment('capital', (definition) => {
+  if (definition.variant && definition.variant !== 'nesis') return buildSectorScenery(definition);
   const group = new THREE.Group();
+  group.userData.surfaceY = definition.surfaceY ?? -.85;
+  let disposed = false;
 
   const materials = [
     new THREE.MeshStandardMaterial({ color: 0x304951, roughness: 0.78, metalness: 0.65 }),
@@ -40,6 +45,7 @@ registerEnvironment('capital', (definition) => {
   group.userData.asset = asset;
   const targetBindings = new Map();
   if (definition.model) new GLTFLoader().load(assetUrl(definition.model), gltf => {
+    if (disposed) { disposeObject(gltf.scene); return; }
     try {
     let meshCount = 0;
     gltf.scene.traverse(object => { if (object.isMesh) meshCount++; });
@@ -48,7 +54,7 @@ registerEnvironment('capital', (definition) => {
       gltf.scene.updateMatrixWorld(true);
       const sockets = [];
       for (const target of definition.hardpoints || []) {
-        const node = gltf.scene.getObjectByName(`socket_${target.id.replaceAll('-', '_')}`);
+        const node = gltf.scene.getObjectByName(`socket_${(target.socketId || target.id).replaceAll('-', '_')}`);
         if (!node) throw new Error(`Missing target socket ${target.id}`);
         const position = node.getWorldPosition(new THREE.Vector3());
         if (position.distanceTo(new THREE.Vector3(target.x, target.y ?? -0.55, target.z)) > 0.02) throw new Error(`Misaligned socket ${target.id}`);
@@ -71,8 +77,10 @@ registerEnvironment('capital', (definition) => {
     hull.traverse(object => { if (object.isMesh) { object.geometry.dispose(); ownedMaterials.add(object.material); } });
     ownedMaterials.forEach(material => material.dispose());
     asset.status = 'ready'; asset.meshCount = meshCount;
-    } catch (error) { targetBindings.clear(); asset.status = 'fallback'; console.warn('Capital ship validation failed; retaining procedural scenery.', error); }
+    } catch (error) { disposeObject(gltf.scene); targetBindings.clear(); asset.status = 'fallback'; console.warn('Capital ship validation failed; retaining procedural scenery.', error); }
   }, undefined, error => { asset.status = 'fallback'; console.warn('Capital ship model unavailable; using procedural hull.', error); });
-  return { group, targetBindings, update(time, distance, menu) { group.position.z = menu ? 0 : distance; } };
+  return { group, targetBindings, update(time, distance, menu) { group.position.z = menu ? 0 : distance; }, dispose() { disposed = true; targetBindings.clear(); disposeObject(group); } };
 });
+
+for (const type of ['space', 'station', 'moon']) registerEnvironment(type, buildSectorScenery);
 

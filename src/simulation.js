@@ -25,7 +25,8 @@ export class Simulation {
     this.waveIndex = 0; this.recoveryIndex = 0; this.bossPhase = 1; this.phaseStarted = mission.boss?.at ?? 0; this.transitionUntil = 0;
     this.time = 0; this.distance = 0; this.status = 'playing'; this.score = 0; this.kills = 0; this.level = 1;
     this.chain = 0; this.chainUntil = 0;
-    this.random = seededRandom(mission.environment.seed);
+    this.random = seededRandom(mission.combatSeed ?? mission.environment.seed);
+    this.fxRandom = seededRandom(mission.environment.seed ^ 0xabcdef);
     this.player = { x: 0, y: -6, health: this.maxHealth, bombs: 2, invulnerable: 1.5, cooldown: 0 };
     this.targets = mission.targets.map(target => ({ ...target, anchorY: target.y, maxHp: target.hp, destroyed: false, nextAt: target.startAt, launches: 0, flash: 0 }));
     this.enemies = pool(64); this.shots = pool(480); this.particles = pool(450); this.pickups = pool(12);
@@ -42,7 +43,8 @@ export class Simulation {
     const boss = this.mission.boss;
     if (!boss || this.time < boss.at) return 'dormant';
     if (this.time < this.transitionUntil) return 'transition';
-    const exposed = this.targets.some(t => t.kind === 'coolant' && t.destroyed) ? boss.weakenedExposure : boss.exposed;
+    const cooled = boss.coolantId ? this.targetById(boss.coolantId)?.destroyed : this.targets.some(t => t.kind === 'coolant' && t.destroyed);
+    const exposed = cooled ? boss.weakenedExposure : boss.exposed;
     return (this.time - this.phaseStarted) % boss.shieldPeriod < boss.shieldPeriod - exposed ? 'shielded' : 'exposed';
   }
   hazardState(hazard) {
@@ -50,7 +52,7 @@ export class Simulation {
     return (this.time - (hazard.from || 0)) % hazard.period > (hazard.activeAfter ?? 3.2) ? 'active' : 'warning';
   }
   spawnWave(wave) {
-    if (wave.sourceBay && this.targets.find(t => t.id === wave.sourceBay)?.destroyed) return;
+    if (wave.sourceBay && this.targetById(wave.sourceBay)?.destroyed) return;
     const side = wave.side || 1;
     if (wave.pattern === 'crossfire') {
       for (let i=0;i<3;i++) {
@@ -76,7 +78,7 @@ export class Simulation {
     }
     target.aimAngle = -Math.atan2(target.aimX - target.mountX, target.aimY - target.y);
     if (this.time >= target.nextAt && !target.burstLeft) {
-      target.burstLeft = this.targets.some(t => t.kind === 'turret' && t.destroyed) ? 1 : 3;
+      target.burstLeft = this.controllerDisabled(target) ? 1 : 3;
       target.burstAt = this.time;
     }
     if (target.burstLeft && this.time >= target.burstAt) {
@@ -84,14 +86,34 @@ export class Simulation {
       const shot = this.hostileShot(target.mountX + dx / length * 2.4, target.y + dy / length * 2.4, dx, dy, 6);
       if (shot) Object.assign(shot, { source: target.id, height: 1.2, entry: .35 });
       target.burstLeft--; target.burstAt += .18;
-      if (!target.burstLeft) target.nextAt = this.time + target.interval * this.difficulty.fireInterval * (this.targets.some(t => t.kind === 'turret' && t.destroyed) ? 1.5 : 1);
+      if (!target.burstLeft) target.nextAt = this.time + target.interval * this.difficulty.fireInterval * (this.controllerDisabled(target) ? 1.5 : 1);
     }
+  }
+  targetById(id) { return this.targets.find(t => t.id === id); }
+  controllerDisabled(target) {
+    return this.mission.campaign ? !!this.targetById(target.controllerId)?.destroyed : this.targets.some(t => t.kind === 'turret' && t.destroyed);
+  }
+  isTargetShielded(target) {
+    return !!target.gates?.some(id => !this.targetById(id)?.destroyed) || (target.kind === 'core' && !!this.mission.boss && this.bossState !== 'exposed');
+  }
+  updateLauncher(target) {
+    if (!this.targetVisible(target)) return;
+    if (target.nextAt - this.time > .35 || target.aimX === undefined) { target.aimX = this.player.x; target.aimY = this.player.y; }
+    target.aimAngle = -Math.atan2(target.aimX - target.x, target.aimY - target.y);
+    if (this.time < target.nextAt) return;
+    const disabled = this.controllerDisabled(target);
+    const dx = target.aimX - target.x, dy = target.aimY - target.y, length = Math.hypot(dx, dy) || 1;
+    for (const offset of disabled ? [0] : [-.55, .55]) {
+      const shot = this.hostileShot(target.x + dx / length * .86 - dy / length * offset, target.y + dy / length * .86 + dx / length * offset, dx, dy, 4.5, true);
+      if (shot) { shot.source = target.id; shot.entry = .35; shot.height = .6; }
+    }
+    target.nextAt = this.time + target.interval * this.difficulty.fireInterval * (disabled ? 1.5 : 1);
   }
   emit(type, data = {}) { this.events.push({ type, ...data }); }
   burst(x, y, count = 20, color = 'orange') {
     for (let i = 0; i < count; i++) {
-      const angle = this.random() * Math.PI * 2, speed = 1 + this.random() * 6;
-      obtain(this.particles, { x, y, vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed, life: 0.25 + this.random() * 0.6, color });
+      const angle = this.fxRandom() * Math.PI * 2, speed = 1 + this.fxRandom() * 6;
+      obtain(this.particles, { x, y, vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed, life: 0.25 + this.fxRandom() * 0.6, color });
     }
   }
   spawnEnemy(x, y, kind = 'scout') {
@@ -106,7 +128,7 @@ export class Simulation {
     return obtain(this.shots, { x, y, vx: dx / length * speed, vy: dy / length * speed, friendly: false, damage: 1, missile, homing: false, height: 0, entry: 0, source: null });
   }
   damageTarget(target, damage) {
-    if (target.destroyed) return;
+    if (target.destroyed || this.isTargetShielded(target)) return;
     if (target.kind === 'core' && this.mission.boss) {
       if (this.bossState !== 'exposed') return;
       const floor = (3 - this.bossPhase) * this.mission.boss.phaseHp;
@@ -125,7 +147,7 @@ export class Simulation {
     this.burst(target.x, target.y, 55);
     this.emit('target-destroyed', { id: target.id, kind: target.kind, label: target.label });
     if (target.kind === 'bay') obtain(this.pickups, { x: target.x, y: target.y, life: 14 });
-    if (target.kind === 'core') { this.status = 'won'; this.score += this.player.health * 1000; this.emit('won'); }
+    if (target.kind === 'core' && !this.mission.campaign) { this.status = 'won'; this.score += this.player.health * 1000; this.emit('won'); }
   }
   damagePlayer() {
     const player = this.player;
@@ -136,7 +158,7 @@ export class Simulation {
     if (player.health <= 0) { this.status = 'lost'; this.emit('lost', { reason: 'Your fighter was destroyed. Try taking out the bays earlier.' }); }
   }
   bomb() {
-    if (this.status !== 'playing' || this.player.bombs <= 0) return false;
+    if (this.status !== 'playing' || this.player.bombs <= 0 || this.player.health <= 0 || this.turnRemaining > 0) return false;
     this.player.bombs--; this.player.invulnerable = Math.max(1.2, this.player.invulnerable); this.bombFlash = 1;
     for (const shot of this.shots) if (!shot.friendly) shot.active = false;
     for (const enemy of this.enemies) if (enemy.active) { enemy.active = false; this.score += 100; this.kills++; this.burst(enemy.x, enemy.y, 12); }
@@ -152,7 +174,8 @@ export class Simulation {
     if (this.mission.pace && this.kills % 10 === 0) obtain(this.pickups, { x: clamp(enemy.x,-7,7), y: enemy.y, life: 12 });
   }
   update(dt, input = { x: 0, y: 0 }) {
-    if (this.status !== 'playing') return;
+    if (this.status !== 'playing' || !(dt > 0)) return;
+    input = { x: 0, y: 0, ...input };
     this.time += dt;
     if (this.time > this.chainUntil) this.chain = 0;
     this.distance = this.routeDistance(this.time);
@@ -170,13 +193,17 @@ export class Simulation {
     for (const target of this.targets) {
       target.y = target.anchorY - this.distance;
       target.flash = Math.max(0, target.flash - dt);
+      if (this.mission.campaign && !target.entered && this.targetVisible(target)) {
+        target.entered = true; target.nextAt = this.time + 1.3;
+      }
       if (target.kind === 'battery') { if (!target.destroyed) this.updateBattery(target, dt); continue; }
+      if (target.kind === 'launcher') { if (!target.destroyed) this.updateLauncher(target); continue; }
       if (target.kind === 'coolant') continue;
       if (target.destroyed || this.time < target.nextAt) continue;
       // A destroyed bay never reaches this branch, even in the final encounter.
       if (target.kind === 'bay') {
         target.nextAt += target.interval;
-        if (target.y > -10 && target.y < 18) {
+        if (target.y > -10 && target.y < (this.mission.campaign ? 17 : 18)) {
           target.launches++;
           for (let i = 0; i < target.squad; i++) this.spawnEnemy(target.x + (i - 0.5) * 1.2, target.y - i * 0.7);
           this.emit('launch', { x: target.x, y: target.y });
@@ -184,10 +211,11 @@ export class Simulation {
       } else if (this.targetVisible(target)) {
         if (target.kind === 'core' && this.mission.boss && this.bossState === 'transition') continue;
         target.nextAt = this.time + target.interval * (this.mission.route ? this.difficulty.fireInterval : 1);
-        const disabledTurret = this.targets.some(t => t.kind === 'turret' && t.destroyed);
-        const count = target.kind === 'core' ? (disabledTurret ? 3 : 5) + (this.mission.boss ? this.bossPhase - 1 : 0) : 3;
+        const disabledTurret = this.controllerDisabled(target);
+        const supports = target.supportIds?.filter(id => !this.targetById(id)?.destroyed).length ?? 0;
+        const count = target.kind === 'core' ? (disabledTurret ? 3 : 5) + (this.mission.boss ? this.bossPhase - 1 : 0) + supports : 3;
         const aim = target.kind === 'core' && this.mission.boss ? clamp((player.x-target.x) / Math.max(4,target.y-player.y),-.65,.65) : 0;
-        for (let i = 0; i < count; i++) this.hostileShot(target.x, target.y - 0.5, aim + (i - (count - 1) / 2) * (this.bossPhase === 2 ? .22 : .38), -1, 6, this.mission.boss && target.kind === 'core' && this.bossPhase === 3 && i % 2 === 0);
+        for (let i = 0; i < count; i++) this.hostileShot(target.x, target.y - 0.5, aim + (i - (count - 1) / 2) * (this.bossPhase === 2 ? .22 : .38), -1, target.attack === 'missiles' ? 4.5 : 6, target.attack === 'missiles' || this.mission.boss && target.kind === 'core' && this.bossPhase === 3 && i % 2 === 0);
       }
     }
     while (this.waveIndex < (this.mission.waves?.length || 0) && this.time >= this.mission.waves[this.waveIndex].at) this.spawnWave(this.mission.waves[this.waveIndex++]);
@@ -206,12 +234,12 @@ export class Simulation {
       this.spawnEnemy(x, 17, this.time > 38 ? 'bomber' : 'scout');
       this.spawnEnemy(-x, 19, 'interceptor');
     }
-    if (this.time >= this.reinforcementAt) {
+    if (!this.mission.campaign && this.time >= this.reinforcementAt) {
       this.reinforcementAt += this.mission.boss?.reinforcementInterval ?? 7;
       for (const bay of this.targets) if (bay.kind === 'bay' && !bay.destroyed) this.spawnEnemy(bay.x, 17);
     }
     player.cooldown -= dt;
-    if (player.cooldown <= 0) {
+    if (player.cooldown <= 0 && player.health > 0) {
       const weapon = WEAPONS[this.weapon];
       player.cooldown += weapon.interval;
       for (const angle of weapon.spread) obtain(this.shots, { x: player.x, y: player.y + 0.6, vx: Math.sin(angle) * weapon.speed, vy: weapon.speed, friendly: true, damage: weapon.damage * (1 + (this.level - 1) * 0.2), missile: this.weapon === 'homing', homing: this.weapon === 'homing' });
@@ -263,10 +291,10 @@ export class Simulation {
     for (const particle of this.particles) if (particle.active) { particle.age += dt; particle.x += particle.vx * dt; particle.y += particle.vy * dt; if (particle.age >= particle.life) particle.active = false; }
     for (const pickup of this.pickups) if (pickup.active) {
       pickup.age += dt; pickup.y -= dt * 1.2;
-      if (Math.hypot(pickup.x - player.x, pickup.y - player.y) < 1.3) { pickup.active = false; player.health = Math.min(this.maxHealth, player.health + 1); this.level = Math.min(3, this.level + 1); this.score += 500; this.emit('pickup'); }
+      if (player.health > 0 && Math.hypot(pickup.x - player.x, pickup.y - player.y) < 1.3) { pickup.active = false; if (!this.mission.campaign) player.health = Math.min(this.maxHealth, player.health + 1); this.score += this.mission.campaign && this.level === 3 ? 1000 : 500; this.level = Math.min(3, this.level + 1); this.emit('pickup'); }
       if (pickup.age > pickup.life || pickup.y < -12) pickup.active = false;
     }
     for (const hazard of this.mission.hazards) if (this.hazardState(hazard) === 'active' && Math.abs(player.x - hazard.x) < hazard.width / 2 && (hazard.zone === 'full' || player.y < -2)) this.damagePlayer();
-    if (this.time >= this.mission.duration && this.status === 'playing') { this.status = 'lost'; this.emit('lost', { reason: 'The jump drive charged. Focus your fire on the core in the final sector.' }); }
+    if (!this.mission.campaign && this.time >= this.mission.duration && this.status === 'playing') { this.status = 'lost'; this.emit('lost', { reason: 'The jump drive charged. Focus your fire on the core in the final sector.' }); }
   }
 }

@@ -13,6 +13,7 @@ export class Audio {
   }
   setMuted(value) { this.muted = value; if (this.master) this.master.gain.setTargetAtTime(value ? 0 : 0.15, this.context.currentTime, 0.03); }
   play(type) {
+    type = ({ 'life-lost': 'hit', 'respawn': 'pickup', 'extra-life': 'won', 'level-clear': 'won', 'game-over': 'hit', 'boss-phase': 'bomb', 'turnaround': 'pickup' })[type] || type;
     if (this.muted || !this.context || this.context.state !== 'running') return;
     const now = this.context.currentTime;
     if (type === 'fire' && now - this.lastShot < 0.15) return;

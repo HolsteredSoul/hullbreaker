@@ -1,19 +1,24 @@
-# Raiden: Hullbreaker — new playable 3D slice
+# Raiden: Hullbreaker — arcade campaign
 
-**[Play on mobile or desktop](https://holsteredsoul.github.io/hullbreaker/)** · [Public repository](https://github.com/HolsteredSoul/hullbreaker)
+A five-level 3D arcade campaign for keyboard and touch. Fight through deep space, wreckage, capital-ship flyovers, station canyons and lunar fortifications. Major installations allow repeated attack passes with an animated breakaway and re-approach. Damage and disabled defenses persist.
 
-GitHub Actions tests, builds and publishes the game to GitHub Pages on each push to `main`.
+Run `npm install`, then `npm run dev -- --port 5187 --strictPort` and open **http://127.0.0.1:5187**. `npm test`, `npm run build` and `npm run asset:verify` validate the simulation, production bundle and existing Blender packages.
 
-Run `npm install`, then `npm run dev -- --port 5187 --strictPort` and open **http://127.0.0.1:5187**. The new `index.html` launches a six-sector capital-ship assault with a 110-second deadline with keyboard/touch controls and a 60-degree perspective camera.
+- **Move:** WASD / arrows or relative touch drag. Weapons fire automatically. Space gives precision steering; Shift / PULSE clears danger; Escape pauses.
+- **Campaign:** three lives, one hit per fighter, protected respawns and weapon downgrades on death. Weapons, pulses, score and surviving lives carry between levels. The last death ends the run.
+- **Progression:** Carrier Screen → Station Breach → Lunar Battery → Fleet Anchorage → Nesis. Each route has about four minutes of first-pass content; strong clears can finish sooner and return passes extend a level.
+- **Mastery:** clean clears and first-pass finishes earn bonuses and ranks. Extra lives arrive at 50,000 and 150,000 points, once each. Return passes raise surviving defenses' pressure up to a fixed cap without shortening warnings.
+- **Replay:** seeded approaches vary formations and scenery. Major assaults remain authored. Reached routes unlock practice, which does not affect campaign records. Choose Pilot or Rookie's slower fire.
 
-Use **WASD / arrows** or **drag** to move. Weapons fire automatically. **Shift / PULSE** uses a bomb; **Space** slows keyboard movement for precision; **Escape** pauses. Destroy bays to cut reinforcements and amber inner links to silence side batteries. Disable fire control and coolant to weaken the three-phase jump core. Choose Pilot or Rookie; reaching sectors unlocks practice starts. Choose Vulcan, Lance or Seeker before launch.
+Settings, campaign scores, ranks and practice unlocks save locally. A live campaign lasts for the current session. Older Nesis scores are retained separately. New scenery uses reusable geometry modules; Nesis and the shared combat library keep their editable Blender sources and independent loading fallbacks.
 
-The arcade art slice includes a Blender-built heavy battleship, player fighter, three enemy silhouettes, sliding bay doors, rotating targets, damage variants, missiles and six debris shapes. Editable sources are `assets/blender/nesis-assault-v3.blend` and `assets/blender/combat-arcade-v2.blend`; the earlier `hullbreaker-art-review.blend` preserves the v2 art review assembly. Both GLBs retain procedural loading/failure fallbacks. See [PACING_REVISION.md](PACING_REVISION.md) for current pacing and [GAMEPLAY_PHASE.md](GAMEPLAY_PHASE.md) for the historical gameplay phase and [ART_SLICE.md](ART_SLICE.md) for assets and measured results, [DEVELOPMENT.md](DEVELOPMENT.md) for extension contracts, and [GAME_PLAN.md](GAME_PLAN.md) for the broader design.
+See [GAME_PLAN.md](GAME_PLAN.md) for the implemented design, [DEVELOPMENT.md](DEVELOPMENT.md) for extension contracts, and [CAMPAIGN_VERIFICATION.md](CAMPAIGN_VERIFICATION.md) for verification and remaining human/device checks. [PACING_REVISION.md](PACING_REVISION.md), [GAMEPLAY_PHASE.md](GAMEPLAY_PHASE.md) and [ART_SLICE.md](ART_SLICE.md) record earlier Nesis milestones.
 
-The original game is preserved below and in `Raiden_Enhanced.html`.
+The [public site](https://holsteredsoul.github.io/hullbreaker/) is published by GitHub Actions when changes are pushed to main. This local campaign implementation has not been published by this task.
+
+The older game below remains preserved in `Raiden_Enhanced.html` as a gameplay reference.
 
 ---
-
 # Voxel Raiden V13: Nemesis - Enhanced Edition
 
 ## 🎮 What's New

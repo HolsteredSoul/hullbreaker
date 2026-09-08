@@ -96,3 +96,125 @@ export const FIRST_MISSION = registerMission({
 export function seededRandom(seed) {
   return () => { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let n = Math.imul(seed ^ seed >>> 15, 1 | seed); n ^= n + Math.imul(n ^ n >>> 7, 61 | n); return ((n ^ n >>> 14) >>> 0) / 4294967296; };
 }
+
+// Campaign routes are authored; only approach formations and scenery are seeded.
+export const CAMPAIGN = Object.freeze({
+  id: 'hullbreaker-campaign-v1', extraLives: [50000, 150000],
+  levels: [
+    { id: 'carrier-screen', title: 'Carrier Screen', description: 'Break the fighter screen and dismantle the carrier.' },
+    { id: 'station-breach', title: 'Station Breach', description: 'Cut the shield feeders inside the docking canyons.' },
+    { id: 'lunar-battery', title: 'Lunar Battery', description: 'Silence the moon’s missile-command fortress.' },
+    { id: 'fleet-anchorage', title: 'Fleet Anchorage', description: 'Cross the anchorage and destroy both command nodes.' },
+    { id: 'nesis', title: 'Nesis', description: 'Break through the orbital defenses and finish the flagship.' },
+  ],
+});
+
+const target = (id, kind, x, y, extra = {}) => ({
+  id, kind, label: id.replaceAll('-', ' ').toUpperCase(), x, y,
+  hp: kind === 'core' ? 95 : kind === 'bay' ? 32 : 26,
+  radius: kind === 'core' ? 1.8 : 1.2, startAt: 0,
+  interval: kind === 'bay' ? 8 : 5.5, squad: 2,
+  reward: kind === 'core' ? 7000 : kind === 'bay' ? 1800 : 1200,
+  ...extra,
+});
+const battery = (id, side, y, extra = {}) => target(id, 'battery', side * 6.8, y, { mountX: side * 10.2, mountY: .15, ...extra });
+const launcher = (id, x, y, extra = {}) => target(id, 'launcher', x, y, { interval: 6, hp: 28, ...extra });
+const scenery = (type, variant = type) => ({ type, variant, length: 130, surfaceY: type === 'space' ? null : -.85 });
+const segment = (id, name, environment, duration = 60, targets = [], extra = {}) => ({
+  id, name, environment, duration, targets, hazards: [],
+  route: [{ at: 0, distance: -24 }, { at: duration, distance: 86 }],
+  ...extra,
+});
+const lane = (id, x, from = 15) => ({ id, x, width: 2.2, from, until: 48, period: 7, activeAfter: 5.6, zone: 'full' });
+const defenses = prefix => [battery(`${prefix}-port`, -1, 18), launcher(`${prefix}-missiles`, 4.5, 39), battery(`${prefix}-starboard`, 1, 63)];
+
+function campaignBlueprints() {
+  const carrier = segment('carrier', 'CARRIER / COMMAND DECK', scenery('capital', 'carrier'), 60, [
+    target('hangar-port', 'bay', -4.8, 18), target('hangar-starboard', 'bay', 4.8, 29),
+    battery('port-gun', -1, 38), launcher('deck-launcher', 5, 46),
+    target('bridge', 'core', 0, 68, { hp: 110, label: 'COMMAND BRIDGE' }),
+  ], { assault: true, completion: ['bridge'], reinforcements: ['hangar-port', 'hangar-starboard'] });
+  const station = segment('hub', 'STATION / SHIELD CANYON', scenery('station'), 60, [
+    target('feeder-port', 'coolant', -4.8, 18, { label: 'PORT SHIELD FEEDER', hp: 25 }),
+    target('feeder-starboard', 'coolant', 4.8, 33, { label: 'STARBOARD SHIELD FEEDER', hp: 25 }),
+    target('station-dock', 'bay', -5, 46), launcher('hub-launcher', 5, 52),
+    target('defense-hub', 'core', 0, 69, { hp: 115, gates: ['feeder-port', 'feeder-starboard'] }),
+  ], { assault: true, completion: ['feeder-port', 'feeder-starboard', 'defense-hub'], reinforcements: ['station-dock'], hazards: [lane('service-barrier', -2.5)] });
+  const lunar = segment('fortress', 'MOON / MISSILE FORTRESS', scenery('moon', 'fortress'), 60, [
+    target('tracking-radar', 'coolant', -4.8, 17, { label: 'TRACKING RADAR' }),
+    launcher('silo-port', -5, 33, { controllerId: 'tracking-radar' }),
+    launcher('silo-starboard', 5, 44, { controllerId: 'tracking-radar' }),
+    target('command-bunker', 'core', 0, 68, { hp: 130, attack: 'missiles', controllerId: 'tracking-radar', supportIds: ['silo-port', 'silo-starboard'] }),
+  ], { assault: true, completion: ['command-bunker'], hazards: [lane('mining-charge', 2.5, 21)] });
+  const command = segment('command', 'ANCHORAGE / TWIN COMMAND', scenery('capital', 'command'), 60, [
+    battery('command-port-gun', -1, 20), battery('command-starboard-gun', 1, 34),
+    target('node-port', 'core', -4.4, 61, { hp: 90, label: 'PORT COMMAND NODE' }),
+    target('node-starboard', 'core', 4.4, 70, { hp: 90, label: 'STARBOARD COMMAND NODE', attack: 'missiles' }),
+  ], { assault: true, completion: ['node-port', 'node-starboard'], reinforcements: ['anchorage-dock-port', 'anchorage-dock-starboard'] });
+  const nesis = segment('flagship', 'NESIS / FLAGSHIP ASSAULT', {
+    ...FIRST_MISSION.environment, variant: 'nesis', surfaceY: -.85,
+  }, 75, FIRST_MISSION.targets.map(t => ({ ...t, socketId: t.id, startAt: 0,
+    controllerId: ['battery', 'core'].includes(t.kind) ? 'turret-a' : undefined,
+  })), { assault: true, completion: ['core'], reinforcements: ['bay-a', 'bay-b'],
+    boss: { ...FIRST_MISSION.boss, at: 0, coolantId: 'coolant' },
+    hazards: [lane('flagship-salvage', -3, 20)],
+  });
+  return [
+    [segment('screen', 'DEEP SPACE / FIGHTER SCREEN', scenery('space')),
+      segment('wreckage', 'WRECKAGE / INTERCEPTION', scenery('space', 'wreckage')),
+      segment('escort', 'CARRIER ESCORT / HULL FLYOVER', scenery('capital', 'cruiser'), 60, defenses('escort')), carrier],
+    [segment('approach', 'DEEP SPACE / STATION APPROACH', scenery('space')),
+      segment('cruiser', 'PICKET CRUISER / FLYOVER', scenery('capital', 'cruiser'), 60, defenses('picket')),
+      segment('docks', 'STATION / DOCKING CANYONS', scenery('station', 'docks'), 60, defenses('docks'), { hazards: [lane('loading-barrier', -3)] }), station],
+    [segment('orbit', 'LUNAR ORBIT / INTERCEPTORS', scenery('space', 'orbit')),
+      segment('surface', 'MOON / CRATER FIELDS', scenery('moon', 'craters'), 60, defenses('surface')),
+      segment('trench', 'MOON / FORTIFIED TRENCH', scenery('moon', 'trench'), 60, defenses('trench'), { hazards: [lane('trench-charge', 3)] }), lunar],
+    [segment('intercept', 'DEEP SPACE / FLEET INTERCEPTION', scenery('space'), 45),
+      segment('picket', 'FLEET / CRUISER FLYOVER', scenery('capital', 'cruiser'), 45, defenses('fleet-picket')),
+      segment('supply', 'FLEET / SUPPLY CARRIER', scenery('capital', 'carrier'), 45, defenses('supply')),
+      segment('perimeter', 'ANCHORAGE / FIGHTER DOCKS', scenery('station', 'docks'), 45, [
+        target('anchorage-dock-port', 'bay', -4.8, 20), target('anchorage-dock-starboard', 'bay', 4.8, 48), launcher('perimeter-launcher', 0, 66),
+      ]), command],
+    [segment('fleet', 'DEEP SPACE / FINAL FLEET SCREEN', scenery('space', 'wreckage'), 45),
+      segment('relay', 'MOON / ORBITAL RELAY', scenery('moon', 'fortress'), 60, defenses('relay')),
+      segment('gateway', 'STATION / FLAGSHIP GATEWAY', scenery('station'), 60, defenses('gateway'), { hazards: [lane('gateway-barrier', -3)] }), nesis],
+  ];
+}
+
+export function compileCampaign(seed = 417) {
+  return campaignBlueprints().map((segments, levelIndex) => {
+    const meta = CAMPAIGN.levels[levelIndex];
+    const random = seededRandom((seed ^ Math.imul(levelIndex + 1, 0x45d9f3b)) >>> 0);
+    const allIds = new Set(segments.flatMap(s => s.targets.map(t => t.id)));
+    if (allIds.size !== segments.reduce((n, s) => n + s.targets.length, 0)) throw new Error('Duplicate campaign target');
+    const qualify = id => `${meta.id}:${id}`;
+    const compiled = segments.map((s, index) => {
+      const patterns = ['scout-vee', 'scout-gap', 'scout-sweep', 'crossfire', 'interceptor-pair', 'bomber-escort'];
+      const encounterRandom = s.assault ? seededRandom(990 + levelIndex) : random;
+      const waves = [];
+      for (let at = .8, beat = 0; at < s.duration - 3; beat++) {
+        waves.push({ at, pattern: patterns[Math.floor(encounterRandom() * (levelIndex === 0 && index === 0 ? 4 : patterns.length))], side: encounterRandom() < .5 ? -1 : 1 });
+        // A short rest every fifth formation, without empty travel stretches.
+        at += beat % 5 === 4 ? 5.5 : 3.6 - levelIndex * .18;
+      }
+      for (const sourceBay of s.reinforcements || []) {
+        if (!allIds.has(sourceBay)) throw new Error(`Unknown reinforcement bay: ${sourceBay}`);
+        for (let at = 9; at < s.duration - 3; at += 12) waves.push({ at, pattern: 'scout-gap', sourceBay: qualify(sourceBay), side: 1 });
+      }
+      const targets = s.targets.map(t => ({ ...t, id: qualify(t.id),
+        gates: t.gates?.map(qualify), controllerId: t.controllerId ? qualify(t.controllerId) : undefined,
+        supportIds: t.supportIds?.map(qualify),
+      }));
+      const environment = { ...s.environment, seed: (seed ^ Math.imul(100 + levelIndex * 10 + index, 7919)) >>> 0 };
+      return { ...s, id: `${meta.id}/${s.id}`, title: meta.title, campaign: true, segmentIndex: index,
+        environment, combatSeed: (seed ^ Math.imul(1 + levelIndex * 10 + index, 3571)) >>> 0,
+        targets, waves: waves.sort((a, b) => a.at - b.at),
+        completion: s.completion?.map(qualify),
+        boss: s.boss ? { ...s.boss, coolantId: qualify(s.boss.coolantId) } : undefined,
+        pace: { ...FIRST_MISSION.pace }, sectors: [{ at: 0, name: s.name, message: s.assault ? 'ASSAULT INBOUND · DAMAGE PERSISTS ON RETURN PASSES' : s.name }],
+        recovery: [], patrol: { startAt: Infinity, interval: 1, stopAt: 0 },
+      };
+    });
+    return { ...meta, index: levelIndex, seed, segments: compiled, duration: compiled.reduce((sum, s) => sum + s.duration, 0) };
+  });
+}

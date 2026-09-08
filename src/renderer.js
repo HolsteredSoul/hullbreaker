@@ -4,6 +4,8 @@ import { createEnvironment } from './environments.js';
 import { seededRandom, WEAPONS } from './content.js';
 import { SceneEffects } from './scene-effects.js';
 import { loadCombatAssets, batchParts, findPart, COMBAT_ASSET_URL } from './combat-assets.js';
+import { disposeObject } from './scene-resources.js';
+import { returnPassPose } from './flight-path.js';
 
 function fighterGeometry() {
   const shape = new THREE.Shape();
@@ -36,7 +38,8 @@ export class GameRenderer {
     this.scene.add(new THREE.HemisphereLight(0x9bccdd, 0x08151d, 2.6));
     const sun = new THREE.DirectionalLight(0xf9ddbd, 3.6); sun.position.set(-20, 30, -25); this.scene.add(sun);
     const rim = new THREE.DirectionalLight(0x58cfdf, 2); rim.position.set(20, 3, 20); this.scene.add(rim);
-    this.environment = createEnvironment({ ...mission.environment, hardpoints: mission.targets.map(target => ({ id: target.id, x: target.mountX ?? target.x, y: target.mountY ?? -.55, z: -target.y, radius: target.radius })) }); this.scene.add(this.environment.group);
+    this.environment = this.makeEnvironment(mission); this.scene.add(this.environment.group);
+    this.retiredEnvironments = []; this.previewEnvironment = null;
     this.temp = new THREE.Object3D(); this.vector = new THREE.Vector3();
     this.createBackground();
     const geometry = fighterGeometry();
@@ -66,6 +69,7 @@ export class GameRenderer {
     this.resize();
   }
   installCombatAssets(registry) {
+    this.registry = registry;
     // Prepare before swapping: a malformed package cannot leave a partial player.
     const prepared = new Map(['scout', 'interceptor', 'bomber', 'missile', ...Array.from({ length: 6 }, (_, i) => `debris_${i}`)].map(id => [id, batchParts(registry.get(id))]));
     const art = registry.get('player').clone(true);
@@ -81,21 +85,72 @@ export class GameRenderer {
     this.fighters.visible = false; this.missiles.visible = false;
     this.enemyBatches = new Map(['scout', 'interceptor', 'bomber'].map(kind => [kind, prepared.get(kind).map(part => batch(this.scene, part.geometry, part.material, 64))]));
     this.missileBatches = prepared.get('missile').map(part => batch(this.scene, part.geometry, part.material, 480));
-    for (const { group } of this.targets.values()) {
-      const kind = group.userData.kind, root = registry.get(kind === 'battery' ? 'turret' : kind === 'coolant' ? 'core' : kind).clone(true);
-      const glow = group.children.filter(child => child.isSprite);
-      retired.push(...group.children.filter(child => !child.isSprite));
-      group.remove(...group.children); group.add(root, ...glow);
-      const intact = findPart(root, 'intact'), moving = findPart(root, 'moving'), wreck = findPart(root, 'destroyed');
-      wreck.visible = false;
-      const doors = kind === 'bay' ? ['door_left', 'door_right'].map(name => { const door = findPart(root, name); door.userData.closedX = door.position.x; return door; }) : [];
-      group.userData = { kind, imported: true, intact, moving, wreck, doors, rotor: kind === 'bay' ? null : findPart(root, 'rotor') };
-    }
+    this.installTargetAssets();
     this.effects.installDebris(prepared);
     this.scene.remove(this.fighters, this.missiles);
     const geometries = new Set(), materials = new Set();
     retired.forEach(root => root.traverse(node => { if (node.isMesh) { geometries.add(node.geometry); materials.add(node.material); } }));
     geometries.forEach(geometry => geometry.dispose()); materials.forEach(material => material.dispose());
+  }
+  installTargetAssets() {
+    if (!this.registry) return;
+    for (const { group } of this.targets.values()) {
+      const kind = group.userData.kind;
+      if (kind === 'launcher' || group.userData.imported) continue;
+      const root = this.registry.get(kind === 'battery' ? 'turret' : kind === 'coolant' ? 'core' : kind).clone(true);
+      for (const child of [...group.children]) if (!child.isSprite) disposeObject(child);
+      group.add(root);
+      const intact = findPart(root, 'intact'), moving = findPart(root, 'moving'), wreck = findPart(root, 'destroyed'); wreck.visible = false;
+      const doors = kind === 'bay' ? ['door_left', 'door_right'].map(name => { const door = findPart(root, name); door.userData.closedX = door.position.x; return door; }) : [];
+      group.userData = { kind, imported: true, intact, moving, wreck, doors, rotor: kind === 'bay' ? null : findPart(root, 'rotor') };
+    }
+  }
+  makeEnvironment(mission) {
+    return createEnvironment({ ...mission.environment, hardpoints: mission.targets.map(target => ({ id: target.id, socketId: target.socketId, x: target.mountX ?? target.x, y: target.mountY ?? -.55, z: -target.y, radius: target.radius })) });
+  }
+  setMission(mission, preserveOutgoing = false) {
+    const oldEnvironment = this.environment;
+    for (const { group, label, relay, shield } of this.targets.values()) {
+      label.remove(); disposeObject(group); if (relay) disposeObject(relay); if (shield) disposeObject(shield);
+    }
+    this.hazards.forEach(({ group }) => disposeObject(group));
+    if (preserveOutgoing) this.retiredEnvironments.push({ environment: oldEnvironment, distance: oldEnvironment.group.position.z, age: 0 });
+    else {
+      oldEnvironment.dispose();
+      for (const old of this.retiredEnvironments) old.environment.dispose();
+      this.retiredEnvironments = [];
+    }
+    if (this.previewEnvironment?.mission === mission) {
+      this.environment = this.previewEnvironment.environment; this.previewEnvironment = null;
+    } else {
+      this.previewEnvironment?.environment.dispose(); this.previewEnvironment = null;
+      this.environment = this.makeEnvironment(mission); this.scene.add(this.environment.group);
+    }
+    this.mission = mission; this.targets = new Map(); this.createTargets(); this.createHazards();
+    this.effects.bindEnvironment(this.environment, this.targets, mission.environment);
+    this.installTargetAssets();
+  }
+  updateScenery(sim, sceneTime, visualDelta, menu) {
+    let distance = sim.distance;
+    if (sim.turnRemaining > 0) {
+      // The installation never moves during the cinematic. At its end the
+      // camera, fighter and installation rebase together onto the entry origin.
+      distance = this.settings.reducedMotion && sim.turnRemaining < sim.turnDuration / 2 ? sim.routeDistance(0) : sim.turnDistance;
+    }
+    this.environment.update(sceneTime, distance, menu, this.settings.reducedMotion);
+    if (!menu && sim.nextMission && sim.time >= sim.mission.duration - 14 && !this.previewEnvironment) {
+      this.previewEnvironment = { mission: sim.nextMission, environment: this.makeEnvironment(sim.nextMission) };
+      this.scene.add(this.previewEnvironment.environment.group);
+    }
+    if (this.previewEnvironment) {
+      const next = this.previewEnvironment;
+      next.environment.update(sceneTime, sim.distance - sim.mission.route.at(-1).distance + next.mission.route[0].distance, false);
+    }
+    for (const old of this.retiredEnvironments) {
+      old.age += visualDelta; old.environment.group.position.z = old.distance + old.age * 18;
+      if (old.age >= 6) old.environment.dispose();
+    }
+    this.retiredEnvironments = this.retiredEnvironments.filter(old => old.age < 6);
   }
   createBackground() {
     const random = seededRandom(891); const points = [];
@@ -103,6 +158,7 @@ export class GameRenderer {
     const geometry = new THREE.BufferGeometry(); geometry.setAttribute('position', new THREE.Float32BufferAttribute(points, 3));
     this.stars = new THREE.Points(geometry, new THREE.PointsMaterial({ color: 0xbbd8dd, size: 0.18, transparent: true, opacity: 0.65, sizeAttenuation: true })); this.scene.add(this.stars);
     const planet = new THREE.Mesh(new THREE.SphereGeometry(32, 48, 24), new THREE.MeshStandardMaterial({ color: 0x264450, roughness: 1, metalness: 0 })); planet.position.set(55, -45, -100); this.scene.add(planet);
+    this.planet = planet; this.planetOrigin = planet.position.clone();
     const atmosphere = new THREE.Mesh(new THREE.SphereGeometry(32.8, 40, 20), new THREE.MeshBasicMaterial({ color: 0x4b8793, transparent: true, opacity: 0.12, side: THREE.BackSide, depthWrite: false })); planet.add(atmosphere);
   }
   createTargets() {
@@ -122,6 +178,14 @@ export class GameRenderer {
         const ring = new THREE.Mesh(new THREE.TorusGeometry(target.radius * 0.8, 0.1, 6, 24), lightMaterial); ring.rotation.x = Math.PI / 2; ring.position.y = 0.35; group.add(ring);
         if (target.kind === 'core') {
           const crystal = new THREE.Mesh(new THREE.OctahedronGeometry(1), new THREE.MeshStandardMaterial({ color: 0x92f3de, emissive: 0x52efdf, emissiveIntensity: 2.5, metalness: 0.4, roughness: 0.15 })); crystal.position.y = 1.2; group.add(crystal); group.userData.rotor = crystal;
+        } else if (target.kind === 'launcher') {
+          const rack = new THREE.Group(); group.add(rack);
+          for (const x of [-.55, .55]) for (const y of [.6, 1.15]) {
+            const tube = new THREE.Mesh(new THREE.CylinderGeometry(.25, .3, 1.7, 8).rotateX(Math.PI / 2), baseMaterial);
+            tube.position.set(x, y, 0); rack.add(tube);
+            const cap = new THREE.Mesh(new THREE.CircleGeometry(.19, 8), lightMaterial); cap.position.set(x, y, -.86); cap.rotation.y = Math.PI; rack.add(cap);
+          }
+          group.userData.rotor = rack;
         } else {
           const cannon = new THREE.Mesh(new THREE.BoxGeometry(0.45, 0.5, 2.2), baseMaterial); cannon.position.set(0, 0.65, 0.5); group.add(cannon); group.userData.rotor = cannon;
         }
@@ -146,7 +210,7 @@ export class GameRenderer {
         const node = new THREE.Mesh(new THREE.TorusGeometry(.65,.12,6,16), new THREE.MeshBasicMaterial({color:0xffbd70,depthTest:false})); node.rotation.x = Math.PI/2; relay.add(node);
         const link = new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(),new THREE.Vector3(target.mountX-target.x,.15,0)]),new THREE.LineBasicMaterial({color:0xffbd70,transparent:true,opacity:.6,depthTest:false})); relay.add(link); relay.renderOrder=4; this.scene.add(relay);
       }
-      if (target.kind === 'core' && this.mission.boss) {
+      if (target.kind === 'core' && (this.mission.boss || target.gates)) {
         shield = new THREE.Mesh(new THREE.SphereGeometry(2.5,20,12),new THREE.MeshBasicMaterial({color:0x60bbff,transparent:true,opacity:.16,wireframe:true,depthWrite:false})); this.scene.add(shield);
       }
       this.targets.set(target.id, { group, label, relay, shield, bar: label.querySelector('i') });
@@ -202,18 +266,37 @@ export class GameRenderer {
   }
   finishBatch(mesh, count) { mesh.count = count; mesh.instanceMatrix.needsUpdate = true; }
   render(sim, elapsed, menu = false) {
-    const sceneTime = menu ? elapsed : sim.time;
+    if (sim.mission !== this.mission) this.setMission(sim.mission, !menu && this.currentSimulation === sim);
+    this.currentSimulation = sim;
+    const sceneTime = menu ? elapsed : (sim.campaignTime ?? sim.time);
     const visualDelta = Math.min(0.05, Math.max(0, sceneTime - (this.lastSceneTime ?? sceneTime)));
     this.lastSceneTime = sceneTime;
     this.setCamera(menu, elapsed, sim.player);
-    this.environment.update(sceneTime, sim.distance, menu, this.settings.reducedMotion);
+    const turning = !menu && sim.turnRemaining > 0;
+    const turnProgress = turning ? 1 - sim.turnRemaining / sim.turnDuration : 0;
+    const pose = turning && !this.settings.reducedMotion ? returnPassPose(turnProgress, sim.turnOrigin, sim.turnDistance - sim.routeDistance(0)) : null;
+    this.renderer.domElement.style.opacity = turning && this.settings.reducedMotion ? String(Math.abs(2 * turnProgress - 1) ** .7) : '1';
+    this.stars.position.set(0, 0, 0); this.planet.position.copy(this.planetOrigin);
+    if (pose) {
+      const origin = new THREE.Vector3(sim.turnOrigin.x, 0, -sim.turnOrigin.y), position = new THREE.Vector3(pose.x, pose.y, pose.z);
+      const axis = new THREE.Vector3(0, 1, 0), heading = pose.heading - pose.bank * .15;
+      const focus = new THREE.Vector3(0, 0, -3).sub(origin).applyAxisAngle(axis, heading).add(position);
+      this.camera.position.sub(origin).applyAxisAngle(axis, heading).add(position);
+      this.camera.lookAt(focus); this.camera.rotateZ(-sim.player.x * .003 - pose.bank * .08); this.camera.updateMatrixWorld();
+      // Stars and the distant planet behave as a sky backdrop, with no near
+      // parallax or discontinuity when the local coordinate origin is rebased.
+      const offset = position.clone().sub(origin); this.stars.position.copy(offset); this.planet.position.add(offset);
+    }
+    this.updateScenery(sim, sceneTime, visualDelta, menu);
     this.stars.rotation.y = sceneTime * 0.0003;
     this.player.position.set(menu ? 12 : sim.player.x, 0, menu ? 7 : -sim.player.y);
     this.player.scale.setScalar(this.mission.pace?.fighterScale ?? 1);
     const bank = menu ? .2 : this.settings.reducedMotion ? 0 : THREE.MathUtils.clamp(-(sim.player.vx || 0)*.025,-.32,.32);
     this.player.rotation.z = THREE.MathUtils.damp(this.player.rotation.z, bank, 12, visualDelta);
+    this.player.rotation.x = 0; this.player.rotation.y = 0; this.player.rotation.order = 'YXZ';
+    if (pose) { this.player.position.set(pose.x, pose.y, pose.z); this.player.rotation.set(pose.pitch, pose.heading, pose.bank, 'YXZ'); }
     this.player.visible = menu || sim.player.health > 0;
-    for (const child of this.player.children.slice(0,-1)) child.visible = menu || sim.player.invulnerable <= 0 || Math.sin(elapsed * 30) > -.3;
+    for (const child of this.player.children.slice(0,-1)) child.visible = menu || sim.turnRemaining > 0 || sim.player.invulnerable <= 0 || Math.sin(elapsed * 30) > -.3;
     this.playerExhaust?.forEach((flame, i) => { flame.scale.z = this.settings.reducedMotion ? 1 : .85 + Math.sin(sceneTime * 18 + i) * .15; });
     let n = 0;
     if (this.enemyBatches) {
@@ -229,8 +312,8 @@ export class GameRenderer {
     n = 0;
     for (const enemy of sim.enemies) if (!menu && enemy.active && enemy.kind === 'interceptor' && enemy.age > (sim.mission.pace ? .65 : 1.1) && enemy.age < (sim.mission.pace ? 1.5 : 2)) this.instance(this.warnings, n++, enemy.x, enemy.y - 3, 1, 0, 0.1);
     for (const target of sim.targets) if (!menu && !['bay','coolant'].includes(target.kind) && sim.targetVisible(target) && target.nextAt - sim.time < 1.2) {
-      if (target.kind === 'battery') {
-        const x = target.mountX, dx = target.aimX-x, dy = target.aimY-target.y;
+      if (target.kind === 'battery' || target.kind === 'launcher') {
+        const x = target.mountX ?? target.x, dx = target.aimX-x, dy = target.aimY-target.y;
         this.temp.position.set(x+dx/2,.18,-target.y-dy/2); this.temp.rotation.set(0,target.aimAngle,0); this.temp.scale.set(1,1,Math.hypot(dx,dy)/6); this.temp.updateMatrix(); this.warnings.setMatrixAt(n++,this.temp.matrix);
       } else this.instance(this.warnings,n++,target.x,target.y-3,1.2,0,.1);
     }
@@ -240,7 +323,7 @@ export class GameRenderer {
     for (const shot of sim.shots) if (shot.active && !menu) {
       const angle = -Math.atan2(shot.vx, shot.vy);
       if (shot.friendly) this.instance(this.friendly, f++, shot.x, shot.y, sim.weapon === 'laser' ? 1.3 : 1, angle);
-      else if (shot.missile) { for (const mesh of this.missileBatches || [this.missiles]) this.instance(mesh, m, shot.x, shot.y, 1.3, angle); m++; }
+      else if (shot.missile) { for (const mesh of this.missileBatches || [this.missiles]) this.instance(mesh, m, shot.x, shot.y, 1.3, angle, (shot.height || 0) * Math.max(0, 1 - shot.age / (shot.entry || 1))); m++; }
       else this.instance(this.hostile, h++, shot.x, shot.y, 1, angle, (shot.height || 0) * Math.max(0,1-shot.age/(shot.entry || 1)));
     }
     this.finishBatch(this.friendly, f); this.finishBatch(this.hostile, h); this.finishBatch(this.missiles, m);
@@ -253,7 +336,10 @@ export class GameRenderer {
       group.position.z = -(menu ? target.anchorY : target.y);
       const destroyed = !menu && target.destroyed;
       if (relay) { relay.position.set(target.x,.18,-target.y); relay.visible = !menu && sim.targetVisible(target); }
-      if (shield) { shield.position.set(target.x,.65,-target.y); shield.visible = !menu && sim.targetVisible(target) && sim.bossState !== 'exposed'; }
+      if (shield) { shield.position.set(target.x,.65,-target.y); shield.visible = !menu && sim.targetVisible(target) && sim.isTargetShielded(target) && !sim.turnRemaining; }
+      group.visible = true;
+      if (turning && this.settings.reducedMotion && turnProgress > .5) group.position.z = sim.routeDistance(0) - target.anchorY;
+      if (relay && sim.turnRemaining) relay.visible = false;
       group.userData.wreck.visible = destroyed;
       if (group.userData.imported) {
         group.userData.intact.visible = !destroyed; group.userData.moving.visible = !destroyed;
@@ -272,9 +358,9 @@ export class GameRenderer {
         door.scale.z = THREE.MathUtils.damp(door.scale.z, opening ? 0.18 : 0.9, 7, visualDelta);
         door.position.z = THREE.MathUtils.damp(door.position.z, opening ? -1 : 0, 7, visualDelta);
       }
-      if (group.userData.rotor) { group.userData.rotor.visible = !destroyed; group.userData.rotor.rotation.y = target.kind === 'battery' ? (target.aimAngle || 0) : sceneTime * 0.7; }
+      if (group.userData.rotor) { group.userData.rotor.visible = !destroyed; group.userData.rotor.rotation.y = ['battery', 'launcher'].includes(target.kind) ? (target.aimAngle || 0) : this.settings.reducedMotion ? 0 : sceneTime * 0.7; }
       }
-      label.hidden = menu || !sim.targetVisible(target);
+      label.hidden = menu || !sim.targetVisible(target) || !!sim.turnRemaining;
       if (!label.hidden) {
         this.vector.set(target.x, 0.5, -target.y - target.radius).project(this.camera);
         label.style.transform = `translate(${(this.vector.x * 0.5 + 0.5) * this.width}px,${(-this.vector.y * 0.5 + 0.5) * this.height - 22}px) translateX(-50%)`;

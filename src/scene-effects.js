@@ -12,6 +12,7 @@ export class SceneEffects {
     gradient.addColorStop(0, 'rgba(255,255,255,1)'); gradient.addColorStop(0.17, 'rgba(220,255,247,.8)'); gradient.addColorStop(0.45, 'rgba(165,240,234,.22)'); gradient.addColorStop(1, 'rgba(120,230,230,0)');
     context.fillStyle = gradient; context.fillRect(0, 0, 64, 64);
     this.glowTexture = new THREE.CanvasTexture(canvas);
+    this.glowTexture.userData.keepAlive = true;
     this.engineLights = []; this.syncEngines();
     this.coreLights = [];
     for (const [id, { group }] of targets) {
@@ -37,6 +38,20 @@ export class SceneEffects {
     this.slipstream = new THREE.LineSegments(new THREE.BufferGeometry().setAttribute('position',new THREE.Float32BufferAttribute(streaks,3)),new THREE.LineBasicMaterial({color:0x6297aa,transparent:true,opacity:.3,depthWrite:false}));
     this.slipstream.frustumCulled=false; scene.add(this.slipstream);
     this.temp = new THREE.Object3D();
+    this.addDeckMarks(definition.markings || []);
+  }
+  bindEnvironment(environment, targets, definition) {
+    for (const { sprite, flame } of this.engineLights) {
+      sprite.removeFromParent(); flame.removeFromParent(); sprite.material.dispose(); flame.geometry.dispose(); flame.material.dispose();
+    }
+    for (const { sprite } of this.coreLights) { sprite.removeFromParent(); sprite.material.dispose(); }
+    this.engineLights = []; this.coreLights = []; this.sockets = null;
+    this.environment = environment; this.syncEngines();
+    for (const [id, { group }] of targets) {
+      const core = group.userData.kind === 'core', sprite = this.glow(core ? 0x79ffde : 0xffa14b, .4);
+      sprite.position.set(0, .65, 0); sprite.scale.setScalar(core ? 6 : 2.6); group.add(sprite);
+      this.coreLights.push({ id, core, sprite });
+    }
     this.addDeckMarks(definition.markings || []);
   }
   syncEngines() {
@@ -111,6 +126,8 @@ export class SceneEffects {
       if (sim.player.health > 0) shadow(sim.player.x, sim.player.y, 0.8);
       for (const enemy of sim.enemies) if (enemy.active) shadow(enemy.x, enemy.y, enemy.kind === 'bomber' ? 0.8 : 0.55);
     }
+    this.shadows.visible = this.environment.group.userData.surfaceY !== null && !sim.turnRemaining;
+    this.shadows.position.y = (this.environment.group.userData.surfaceY ?? -.85) + .85;
     this.shadows.count = count; this.shadows.instanceMatrix.needsUpdate = true;
     this.debris.visible = !reducedMotion && !this.debrisBatches;
     this.debris.count = quality === 'low' ? 18 : this.debrisData.length;

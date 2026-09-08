@@ -35,6 +35,11 @@ export function batchParts(root) {
 
 export function loadCombatAssets(status) {
   return new GLTFLoader().loadAsync(assetUrl(COMBAT_ASSET_URL)).then(gltf => {
+    gltf.scene.traverse(node => {
+      if (!node.isMesh) return;
+      node.geometry.userData.sharedCombat = true;
+      for (const material of Array.isArray(node.material) ? node.material : [node.material]) material.userData.sharedCombat = true;
+    });
     const registry = new Map(required.map(id => [id, gltf.scene.getObjectByName(id)]));
     for (const [id, root] of registry) {
       if (!root || !new THREE.Box3().setFromObject(root).getSize(new THREE.Vector3()).length()) throw new Error(`Missing combat asset: ${id}`);
