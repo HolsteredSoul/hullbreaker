@@ -1,0 +1,17 @@
+{
+  "name": "raiden-hullbreaker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0",
+    "build": "vite build",
+    "preview": "vite preview --host 0.0.0.0",
+    "test": "node --test tests/*.test.js",
+    "asset:source": "node scripts/export-hull-source.mjs",
+    "asset:verify": "node scripts/verify-arcade-assets.mjs",
+    "asset:export": "\"C:/Program Files/Blender Foundation/Blender 5.2/blender.exe\" --background --factory-startup --python scripts/export-arcade-assets.py"
+  },
+  "dependencies": { "three": "0.185.1" },
+  "devDependencies": { "vite": "8.2.2", "@playwright/cli": "0.1.1" }
+}

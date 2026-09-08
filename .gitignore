@@ -1,0 +1,12 @@
+node_modules/
+dist/
+output/
+.playwright-cli/
+*.log
+*.blend1
+.env
+.env.*
+!.env.example
+.codex/
+.agents/
+assets/blender/Untitled.blend

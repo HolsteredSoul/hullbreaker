@@ -1,0 +1,20 @@
+{
+  "nesis-arcade-v2": {
+    "bytes": 3524784,
+    "mesh_batches": 27,
+    "triangles": 35392,
+    "atlas": 2048
+  },
+  "combat-arcade-v2": {
+    "bytes": 1875084,
+    "mesh_batches": 27,
+    "triangles": 15644,
+    "atlas": 1024
+  },
+  "nesis-assault-v3": {
+    "bytes": 3231444,
+    "mesh_batches": 27,
+    "triangles": 31536,
+    "atlas": 2048
+  }
+}

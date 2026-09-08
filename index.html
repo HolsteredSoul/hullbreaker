@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#071216" />
+  <meta name="description" content="Fly the hull. Break the fleet. A playable 3D arcade shooter for keyboard and touch." />
+  <title>Raiden — Hullbreaker</title>
+  <link rel="icon" type="image/svg+xml" href="/icon.svg" />
+</head>
+<body>
+  <main id="app">
+    <div id="scene" aria-label="3D space combat area"></div>
+    <div class="vignette" aria-hidden="true"></div>
+    <header class="masthead">
+      <a class="brand" href="./" aria-label="Raiden home"><span class="brand-mark">R</span> RAIDEN<span class="brand-sub">/ HULLBREAKER</span></a>
+      <div class="top-actions"><span id="performance">SYSTEM ONLINE</span><button id="sound" class="icon-button" aria-label="Enable sound" title="Toggle sound">SOUND OFF</button><button id="pause" class="icon-button" aria-label="Pause game" hidden>Ⅱ</button></div>
+    </header>
+    <section id="menu" class="menu">
+      <div class="intro">
+        <div class="eyebrow"><span class="live-dot"></span> SINGLE PILOT OPERATION <span class="serial">// 001</span></div>
+        <h1>FLY THE HULL.<br /><span>BREAK THE FLEET.</span></h1>
+        <p class="intro-copy">In the shadow of a fleeing dreadnought,<br class="desktop-break" /> one fighter is all it takes.</p>
+        <div class="mission-line"><span class="line-number">01</span><div><span class="small-label">YOUR TARGET</span><strong>NESIS / CAPITAL DREADNOUGHT</strong></div><span class="status-tag">HOSTILE</span></div>
+        <fieldset class="weapon-select"><legend>SELECT YOUR LOADOUT</legend><button class="weapon selected" data-weapon="vulcan" aria-pressed="true"><span>01 / VULCAN</span><small>Wide spread</small></button><button class="weapon" data-weapon="laser" aria-pressed="false"><span>02 / LANCE</span><small>Focused beam</small></button><button class="weapon" data-weapon="homing" aria-pressed="false"><span>03 / SEEKER</span><small>Guided missiles</small></button></fieldset>
+        <div class="sortie-options"><label>DIFFICULTY<select id="difficulty"><option value="pilot">PILOT · 4 HULL</option><option value="rookie">ROOKIE · 5 HULL / SLOWER FIRE</option></select></label><label>MISSION<select id="checkpoint"><option value="0">FULL SORTIE</option></select></label></div><button id="launch" class="primary-button"><span>LAUNCH SORTIE</span><span>↗</span></button>
+        <div class="launch-note">110 SECOND STRIKE RUN <span>•</span> 6 SECTORS · 3 CORE PHASES</div>
+      </div>
+      <aside class="briefing"><div class="eyebrow">TACTICAL BRIEFING</div><div class="brief-row"><span>01</span><div><h2>Stay in the shadow</h2><p>Punch through crossing fighters and staggered batteries. Keep moving and chain kills.</p></div></div><div class="brief-row"><span>02</span><div><h2>Silence the hangars</h2><p>Destroy bays to cut reinforcements. Shoot the amber inner links to silence side guns.</p></div></div><div class="brief-row"><span>03</span><div><h2>Break the jump core</h2><p>Disable fire control and coolant to weaken its three-phase core. Reached sectors unlock practice.</p></div></div><div class="brief-footer"><span class="crosshair">⌖</span> ONE SHIP. AN ENTIRE BATTLEFIELD.</div></aside>
+    </section>
+    <section id="hud" hidden aria-label="Flight instruments">
+      <div class="hud-left"><div class="small-label">HULL INTEGRITY</div><div id="health" aria-label="3 health">▰ ▰ ▰</div><div class="small-label">SCORE <strong id="score">000000</strong></div><div id="chain" class="small-label">CHAIN KILLS FOR BONUS</div></div>
+      <div class="hud-center"><div class="small-label" id="sector">01 / ENGINE WAKE</div><div class="progress-track"><div id="progress"></div></div><div class="subsystems"><span id="bay-a">A / ACTIVE</span><span id="bay-b">B / ACTIVE</span></div></div>
+      <div class="hud-right"><div class="small-label">JUMP IN</div><div id="timer">01:50</div><div id="weapon-label" class="small-label">VULCAN / LV 1</div></div>
+      <div id="objective" role="status">BATTERIES 0/4</div><div id="target-labels" aria-hidden="true"></div>
+      <div id="announcement" role="status" aria-live="polite"></div>
+      <button id="bomb" aria-label="Use pulse bomb" class="bomb-button"><span>◈</span> PULSE <b id="bomb-count">2</b><small>SHIFT</small></button>
+      <div id="flight-hint">WASD / ARROWS TO MOVE <span>·</span> AUTO-FIRE ENGAGED</div>
+    </section>
+    <footer id="footer"><span><b class="key">WASD</b> MOVE <i>/</i> <b class="key">SHIFT</b> PULSE <i>/</i> DRAG ON TOUCH</span><div><label for="quality">VISUALS</label><select id="quality"><option value="auto">AUTO</option><option value="high">HIGH</option><option value="low">LOW</option></select><label class="motion-toggle"><input type="checkbox" id="motion" /> REDUCED MOTION</label></div></footer>
+    <div id="dialog" class="modal" hidden><section class="dialog-card" role="dialog" aria-modal="true" aria-labelledby="dialog-title"><div id="dialog-eyebrow" class="eyebrow">FLIGHT SUSPENDED</div><h2 id="dialog-title">HOLD POSITION.</h2><p id="dialog-copy">Your sortie is paused.</p><div id="result-stats"></div><button id="resume" class="primary-button">RESUME FLIGHT <span>↗</span></button><button id="retry" class="secondary-button">RESTART SORTIE</button><button id="return-menu" class="text-button">RETURN TO HANGAR</button></section></div>
+    <div id="error" class="modal" hidden><section class="dialog-card"><div class="eyebrow">DISPLAY UNAVAILABLE</div><h2>Unable to start.</h2><p id="error-copy">This game needs WebGL 2. Please enable hardware acceleration or try another browser.</p><button onclick="location.reload()" class="primary-button">RELOAD</button></section></div>
+  </main>
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>
