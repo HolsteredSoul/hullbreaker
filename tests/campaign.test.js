@@ -93,7 +93,7 @@ test('surface launchers warn, launch destructible missiles and respect radar des
   sim.shots.forEach(s => s.active = false); sim.time = launcher.nextAt; sim.updateLauncher(launcher);
   assert.equal(sim.shots.filter(s => s.active && s.missile && s.source === launcher.id).length, 2);
   sim.damageTarget(sim.targetById(launcher.controllerId), 999); sim.shots.forEach(s => s.active = false);
-  sim.time = launcher.nextAt; sim.updateLauncher(launcher);
+  sim.time = Math.max(launcher.nextAt,launcher.burstAt); sim.updateLauncher(launcher);
   assert.equal(sim.shots.filter(s => s.active && s.missile && s.source === launcher.id).length, 1);
 });
 

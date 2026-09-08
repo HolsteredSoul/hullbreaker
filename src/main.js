@@ -3,6 +3,7 @@ import { CAMPAIGN, WEAPONS, DIFFICULTIES } from './content.js';
 import { CampaignRun } from './campaign.js';
 import { GameRenderer } from './renderer.js';
 import { Input } from './input.js';
+import { installHelp } from './help.js';
 import { Audio } from './audio.js';
 import { weaponTier, POWER_RESERVE, PICKUPS } from './weapon-progression.js';
 
@@ -28,6 +29,7 @@ if (renderer) {
   let accumulator = 0, lastTime = performance.now(), noticeUntil = 0, uiAt = 0;
   let frameCount = 0, frameStart = performance.now(), fps = 0, slowWindows = 0;
   const input = new Input(renderer.renderer.domElement, renderer, () => mode === 'playing' && sim.controlsEnabled, togglePause, bomb);
+  const help = installHelp(()=>{if(mode==='playing')pause();input.clear();},()=>input.clear());
   const scoreKey = () => `${CAMPAIGN.id}:${run.difficulty}`;
   const clock = time => `${String(Math.floor(time / 60)).padStart(2, '0')}:${String(Math.floor(time % 60)).padStart(2, '0')}`;
   function notice(message) { $('#announcement').textContent = message; $('#announcement').classList.add('visible'); noticeUntil = performance.now() + 3400; }
@@ -126,7 +128,7 @@ if (renderer) {
     mode = 'playing'; audio.unlock(); $('#dialog').hidden = true; $('#pause').textContent = 'Ⅱ'; $('#pause').setAttribute('aria-label', 'Pause game');
     input.clear(); accumulator = 0; lastTime = performance.now(); $('#resume').blur();
   }
-  function togglePause() { if (mode === 'playing') pause(); else if (mode === 'paused') resume(); }
+  function togglePause() { if(help.open)return; if (mode === 'playing') pause(); else if (mode === 'paused') resume(); }
   function processEvents() {
     for (const event of sim.events) {
       audio.play(event.type);

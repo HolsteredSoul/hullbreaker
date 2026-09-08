@@ -68,7 +68,7 @@ test('cover destruction persists across passes; decks below flight altitude do n
   const deck=arena();deck.obstacles=[{...wall(),bottom:-2,top:-.65}];const shot=bullet(deck);deck.update(.1);assert.ok(shot.active);
 });
 test('fighters collide with structures, and protected movement cannot leave the steering field',()=>{
-  const sim=arena();sim.obstacles=[wall()];const enemy=sim.spawnEnemy(0,2);enemy.entry=0;sim.update(.6);assert.equal(enemy.active,false);
+  const sim=arena();sim.obstacles=[wall()];const enemy=sim.spawnEnemy(0,2);enemy.entry=0;enemy.x=0;enemy.y=0;sim.update(.01);assert.equal(enemy.active,false);
   const player=arena();player.player.y=-3;player.player.invulnerable=0;player.obstacles=[wall()];player.update(.3,{x:0,y:1});assert.equal(player.lives,2);
   const protectedSim=arena();protectedSim.player.y=-9;protectedSim.obstacles=[{...wall(),y:-9}];protectedSim.update(.1);
   assert.ok(protectedSim.player.y>=-9&&protectedSim.player.y<=12&&Math.abs(protectedSim.player.x)<=8);

@@ -205,7 +205,10 @@ export function compileCampaign(seed = 417) {
         ...(t.kind === 'battery' ? { x: Math.sign(t.x) * 4.9, mountX: Math.sign(t.x) * 4.9, mountY: -.55, scale: 1, label: `${t.x < 0 ? 'PORT' : 'STBD'} TURRET` } : {}),
         socketPosition: t.kind === 'battery' && t.socketId ? [t.mountX, t.mountY, -t.y] : undefined,
         id: qualify(t.id),
-        interval: t.interval * (t.kind==='battery'?.78:t.kind==='launcher'?.75:t.kind==='core'?.7:1),
+        hp: ['battery','turret','launcher'].includes(t.kind) ? Math.round(t.hp*(t.kind==='launcher'?2.2:1.9)+levelIndex*3) : t.hp,
+        burstCount: t.kind==='battery' ? 4+(levelIndex>=3?1:0) : undefined,
+        salvoCount: t.kind==='launcher' ? 2 : undefined,
+        interval: t.interval * (t.kind==='battery'?.6:t.kind==='launcher'?.56:t.kind==='turret'?.7:t.kind==='core'?.7:1),
         gates: t.gates?.map(qualify), controllerId: t.controllerId ? qualify(t.controllerId) : undefined,
         supportIds: t.supportIds?.map(qualify),
       }));

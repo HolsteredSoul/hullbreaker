@@ -2,13 +2,14 @@ import { WEAPONS, DIFFICULTIES, seededRandom } from './content.js';
 import { SQUADS } from './encounters.js';
 import { weaponTier, upgradeWeapon, collectWeapon, depletePower, POWER_RESERVE, PICKUPS } from './weapon-progression.js';
 import { sweepBox, sweepCircle } from './collision.js';
+import { steerAroundScenery, enemyRadius, clearSpawnX } from './enemy-navigation.js';
 
 export const FIELD = Object.freeze({ minX: -8, maxX: 8, minY: -9, maxY: 12 });
 export const clamp = (n, lo, hi) => Math.min(hi, Math.max(lo, n));
 const pool = (count) => Array.from({ length: count }, () => ({ active: false, x: 0, y: 0, vx: 0, vy: 0, age: 0 }));
 function obtain(items, values) {
   const item = items.find(entry => !entry.active);
-  if (item) Object.assign(item, { active: true, age: 0, vx: 0, vy: 0, entry: 0, height: 0, source: null, sourceBay:null, pierce: 0, hitIds: null, targetId: null, width: 1, waveId: null, pickupType: 'power' }, values);
+  if (item) Object.assign(item, { active: true, age: 0, vx: 0, vy: 0, entry: 0, height: 0, source: null, sourceBay:null, navVx:0, avoiding:false, pierce: 0, hitIds: null, targetId: null, width: 1, waveId: null, pickupType: 'power' }, values);
   return item;
 }
 // Swept point vs circle avoids tunneling, including at lower rendering rates.
@@ -34,7 +35,7 @@ export class Simulation {
     this.player = { x: 0, y: -6, health: this.maxHealth, bombs: 2, invulnerable: 1.5, cooldown: 0 };
     this.targets = mission.targets.map(target => ({ ...target, anchorY: target.y, maxHp: target.hp, destroyed: false, nextAt: target.startAt, launches: 0, flash: 0 }));
     this.enemies = pool(64); this.shots = pool(mission.campaign ? 1024 : 480); this.particles = pool(450); this.pickups = pool(12);
-    this.enemySerial = 0; this.waveSerial = 0; this.formations = new Map(); this.powerKills = 0;
+    this.enemyTerrainCrashes = 0; this.enemySerial = 0; this.waveSerial = 0; this.formations = new Map(); this.powerKills = 0;
     this.obstacles = (mission.obstacles || []).map(o=>({...o,destroyed:false,maxHp:o.hp}));
     this.events = []; this.nextPatrol = mission.patrol.startAt; this.sector = -1;
     this.reinforcementAt = mission.boss?.at ?? 70; this.bombFlash = 0;
@@ -66,7 +67,7 @@ export class Simulation {
       for (const [x,y,kind,path='forward'] of squad) {
         const enemy = this.spawnEnemy(x*side,y,kind);
         if (!enemy) { state.clean=false; continue; }
-        Object.assign(enemy,{waveId:id,path,originX:x*side,x:x*side,vx:path==='cross'?-Math.sign(x*side)*4.2:0,rewardType:wave.rewardType||'power'});
+        Object.assign(enemy,{waveId:id,path,originX:enemy.x,vx:path==='cross'?-Math.sign(x*side)*4.2:0,rewardType:wave.rewardType||'power'});
         state.remaining++;
       }
       if (!state.remaining) this.formations.delete(id);
@@ -96,14 +97,14 @@ export class Simulation {
     }
     target.aimAngle = -Math.atan2(target.aimX - target.mountX, target.aimY - target.y);
     if (this.time >= target.nextAt && !target.burstLeft) {
-      target.burstLeft = this.controllerDisabled(target) ? 1 : 3;
+      target.burstLeft = this.controllerDisabled(target) ? 1 : (target.burstCount ?? 3);
       target.burstAt = this.time;
     }
     if (target.burstLeft && this.time >= target.burstAt) {
       const dx = target.aimX - target.mountX, dy = target.aimY - target.y, length = Math.hypot(dx,dy) || 1;
-      const shot = this.hostileShot(target.mountX + dx / length * 2.4, target.y + dy / length * 2.4, dx, dy, 6);
+      const shot = this.hostileShot(target.mountX + dx / length * 2.4, target.y + dy / length * 2.4, dx, dy, this.mission.campaign ? 7.5 : 6);
       if (shot) Object.assign(shot, { source: target.id, height: 1.2, entry: .35 });
-      target.burstLeft--; target.burstAt += .18;
+      target.burstLeft--; target.burstAt += this.mission.campaign ? .15 : .18;
       if (!target.burstLeft) target.nextAt = this.time + target.interval * this.difficulty.fireInterval * (this.controllerDisabled(target) ? 1.5 : 1);
     }
   }
@@ -118,14 +119,17 @@ export class Simulation {
     if (!this.targetVisible(target)) return;
     if (target.nextAt - this.time > .35 || target.aimX === undefined) { target.aimX = this.player.x; target.aimY = this.player.y; }
     target.aimAngle = -Math.atan2(target.aimX - target.x, target.aimY - target.y);
-    if (this.time < target.nextAt) return;
+    if (this.time < target.nextAt && !target.burstLeft) return;
+    if (!target.burstLeft) { target.burstLeft = this.controllerDisabled(target) ? 1 : (target.salvoCount ?? 1); target.burstAt = this.time; }
+    if (this.time < target.burstAt) return;
     const disabled = this.controllerDisabled(target);
     const dx = target.aimX - target.x, dy = target.aimY - target.y, length = Math.hypot(dx, dy) || 1;
     for (const offset of disabled ? [0] : [-.55, .55]) {
-      const shot = this.hostileShot(target.x + dx / length * .86 - dy / length * offset, target.y + dy / length * .86 + dx / length * offset, dx, dy, 4.5, true);
+      const shot = this.hostileShot(target.x + dx / length * .86 - dy / length * offset, target.y + dy / length * .86 + dx / length * offset, dx, dy, this.mission.campaign ? 5.8 : 4.5, true);
       if (shot) { shot.source = target.id; shot.entry = .35; shot.height = .6; }
     }
-    target.nextAt = this.time + target.interval * this.difficulty.fireInterval * (disabled ? 1.5 : 1);
+    target.burstLeft--; target.burstAt = this.time + .32;
+    if(!target.burstLeft)target.nextAt = this.time + target.interval * this.difficulty.fireInterval * (disabled ? 1.5 : 1);
   }
   emit(type, data = {}) { this.events.push({ type, ...data }); }
   burst(x, y, count = 20, color = 'orange') {
@@ -134,7 +138,12 @@ export class Simulation {
       obtain(this.particles, { x, y, vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed, life: 0.25 + this.fxRandom() * 0.6, color });
     }
   }
-  spawnEnemy(x, y, kind = 'scout') {
+  spawnEnemy(x, y, kind = 'scout', sourceBay = null) {
+    if(this.mission.campaign){
+      const mounts=this.targets.filter(t=>!t.destroyed).map(t=>({source:t.id,x:t.mountX??t.x,y:t.anchorY,w:t.radius*1.25,d:t.radius*1.25,bottom:t.mountY??-.55,top:.6}));
+      x=clearSpawnX(clamp(x,-7.5,7.5),y+this.distance,enemyRadius({kind}),[...this.obstacles,...mounts],sourceBay);
+      if(x===null)return null;
+    }
     if (this.mission.route && this.enemies.filter(e => e.active).length >= (this.mission.combat?.maxEnemies ?? 18)) return null;
     const enemy = obtain(this.enemies, { x: clamp(x, -7.5, 7.5), y, originX: x, kind, hp: kind === 'bomber' ? 4 : 2, cooldown: 1.2 + this.random(), phase: this.random() * 6.28, dash: false });
     if (enemy) { enemy.entry = this.mission.route && y < 16 ? .7 : 0; enemy.dashX = null; enemy.path = 'forward'; enemy.angle = Math.PI; if (this.mission.route && kind === 'bomber') enemy.hp = 6; }
@@ -267,7 +276,12 @@ export class Simulation {
     else if(enemy.path==='sweep')enemy.x=clamp(enemy.originX+Math.sin(enemy.age*1.1)*3,-8,8);
     else enemy.x=clamp(enemy.originX+Math.sin(enemy.age*1.3+enemy.phase)*.8,-8,8);
     if(enemy.path==='hold'&&enemy.y<=10&&enemy.age<6)speed=0;
-    enemy.y-=speed*dt;enemy.angle=speed===0?-Math.atan2(player.x-enemy.x,player.y-enemy.y):-Math.atan2(enemy.x-oldX,enemy.y-oldY);
+    const preferred={vx:clamp((enemy.x-oldX)/dt,-6,6),vy:-speed};
+    enemy.x=oldX;
+    const scrollSpeed=(this.distance-this.previousDistance)/dt;
+    const velocity=steerAroundScenery(enemy,preferred,this.activeObstacles||[],this.previousDistance,scrollSpeed,enemy.age<enemy.entry+1?enemy.sourceBay:null);
+    enemy.x=oldX+velocity.vx*dt;enemy.y=oldY+velocity.vy*dt;
+    enemy.angle=Math.hypot(velocity.vx,velocity.vy)<.1?-Math.atan2(player.x-enemy.x,player.y-enemy.y):-Math.atan2(enemy.x-oldX,enemy.y-oldY);
     if(enemy.cooldown>.35||enemy.aimX===undefined){enemy.aimX=player.x;enemy.aimY=player.y;}
     if(enemy.cooldown<=0&&enemy.y<16&&enemy.y>player.y+3&&Math.hypot(enemy.x-player.x,enemy.y-player.y)>4&&enemy.kind!=='supply'){
       const angle=Math.atan2(enemy.aimX-enemy.x,enemy.aimY-enemy.y);
@@ -276,7 +290,7 @@ export class Simulation {
       enemy.volleys++;enemy.cooldown=(enemy.kind==='gunship'?1.15:enemy.kind==='bomber'?1.35:1.1)*this.difficulty.fireInterval*this.mission.combat.fireInterval;
     }
     const contact=this.sceneryContact(oldX,oldY,enemy.x,enemy.y,enemy.kind==='gunship'?1.2:enemy.kind==='bomber'?.9:.6,0,0,enemy.age<enemy.entry+1?enemy.sourceBay:null,.2);
-    if(contact.obstacle||enemy.y< -13||Math.abs(enemy.x)>15){this.finishFormation(enemy,false);enemy.active=false;if(contact.obstacle)this.burst(enemy.x,enemy.y,14);return;}
+    if(contact.obstacle||enemy.y< -13||Math.abs(enemy.x)>15){this.finishFormation(enemy,false);enemy.active=false;if(contact.obstacle){this.enemyTerrainCrashes++;this.burst(enemy.x,enemy.y,14);}return;}
     if(segmentHits(oldX,oldY,enemy.x,enemy.y,player.x,player.y,.85)){this.damagePlayer();this.finishFormation(enemy,false);enemy.active=false;this.burst(enemy.x,enemy.y);}
   }
   update(dt, input = { x: 0, y: 0 }) {
@@ -331,7 +345,7 @@ export class Simulation {
         if (target.y > -10 && target.y < (this.mission.campaign ? 17 : 18)) {
           target.launches++;
           target.lastLaunchAt=this.time;
-          for (let i = 0; i < target.squad; i++) {const enemy=this.spawnEnemy(target.x + (i - 0.5) * 1.2, target.y - i * 0.7);if(enemy)enemy.sourceBay=target.id;}
+          for (let i = 0; i < target.squad; i++) {const enemy=this.spawnEnemy(target.x + (i - 0.5) * 1.2, target.y - i * 0.7, 'scout', target.id);if(enemy)enemy.sourceBay=target.id;}
           this.emit('launch', { x: target.x, y: target.y });
         }
       } else if (this.targetVisible(target)) {

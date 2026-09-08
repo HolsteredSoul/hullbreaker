@@ -130,3 +130,5 @@ Your best score is automatically saved in your browser!
 **Original**: Voxel Raiden V12: Hyperion  
 
 Enjoy the enhanced arcade experience! 🚀
+
+Enemy pilots now look ahead for solid scenery, steer around obstructions and brake when a corridor is blocked. Gun batteries have heavier armour and denser bursts; missile launchers fire two successive pairs. **HOW TO PLAY** in the hangar/header and **HOW TO PLAY / UPGRADES** in pause open a dedicated, mobile-friendly guide covering every pickup, power depletion, shields, hull, controls and campaign rewards.

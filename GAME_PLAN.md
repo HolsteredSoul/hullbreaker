@@ -59,3 +59,11 @@ Modular scenery creates distinct cruisers, carriers, station structures and moon
 Around 40 FPS remains the baseline target, with 60 aspirational. Visual quality reduces resolution and decorative effects without changing combat. Human pacing/difficulty review and physical-device performance remain acceptance work; automated protected-pilot tests establish weapon feasibility rather than human mastery.
 
 Campaign side batteries now sit on actual inboard mounts at X ±4.9; visual turrets, aim points and collision agree. Remote targeting links are legacy-only. Moon rock placement reserves the full rotated rock bounds outside the combat lane. Mobile portrait and short touch landscape use a two-row HUD, short objective status, letter-coded pickups and a single bottom notice. Route description, flight time, sound and the pickup guide are available in pause.
+
+## Enemy navigation and defended turrets
+
+Campaign pilots retain their formation goals but sample safe velocities against the same scenery and mount bounds used for collision, looking 1.65 seconds ahead in installation coordinates. They can sidestep, slow down or hold relative to the installation. Spawn placement searches nearby clear lanes; an entirely blocked spawn is canceled. Terrain collision remains active. This applies to every campaign environment and accounts for ship size and scrolling.
+
+Campaign gun armour is round(base HP × 1.9 + level index × 3); missile turret armour uses ×2.2. Gun batteries fire four rounds (five on levels four and five), 0.15 seconds apart, at speed 7.5 before difficulty modifiers. Their reload multiplier is 0.60 of authored content. Missile turrets fire two pairs 0.32 seconds apart at speed 5.8, with a reload multiplier of 0.56. Controllers still weaken attacks and destruction cancels pending bursts. The 1.3-second entry warning and 0.35-second aim lock remain. Legacy mission values remain unchanged.
+
+A dedicated How to Play dialog provides a colour-coded pickup guide and rules for power depletion, protection, lives and scoring. Opening it from flight pauses combat; closing returns to pause. Mobile access is via the hangar and pause, keeping the flight HUD compact.

@@ -4,7 +4,7 @@ Implemented locally in the Hullbreaker Vite application. The original `Raiden_En
 
 ## Automated checks
 
-- `npm test`: **49 passed, 0 failed**, including all 22 original combat tests, campaign progression tests nine focused arcade/collision/reward tests and seven loadout/turret regression tests.
+- `npm test`: **52 passed, 0 failed**, including all 22 original combat tests, campaign progression tests nine focused arcade/collision/reward tests seven loadout/turret regression tests and three navigation/turret tests.
 - `npm run build`: passed; production output is `dist/`.
 - `npm run asset:verify`: passed for all three GLBs; combined payload 6,170,784 bytes. The new Blender library contains seven assets, 14 batches and 11,312 triangles. Editable source: `assets/blender/campaign-modules-v1.blend`.
 - All 15 weapon/assault combinations finish using ordinary simulated weapon shots with a protected targeting pilot. Targets can survive into return passes. No direct objective damage is used in this feasibility test.
@@ -52,3 +52,11 @@ Measure actual level times and deaths for new and experienced players before tre
 - Weapon family reset, matching upgrade/refill, boosted firing depletion, unlimited base fire, shields before hull, hull damage power loss, upgrade caps and overflow points, death reset, supply carry and clear during respawn are covered. The 15 assault feasibility cases hold their selected weapon constant; weapon crates are tested separately.
 - Chrome browser checks: 390×844 portrait and 844×390 touch landscape compact instruments, mobile hangar and pause guide, seven distinct pickup colours/letters, shield bubble, simultaneous emulated drag and pulse (X 0 to 1.76; pulses 2 to 1), pause freezing time, and Nesis imported asset ready with all four batteries visually mounted at their collision X coordinate. No application exceptions. Screenshots and scripts use ignored `output/playwright/`.
 - This is local implementation. Physical iOS/Android testing and human tuning of the 24-second boost reserve and new durability economy remain outstanding. Prior performance samples above were not remeasured for this revision.
+
+## Navigation, turret difficulty and dedicated help revision
+
+- 52 tests passed. Twenty-four complete station/moon routes (eight environments across seeds 417, 42 and 901) produced zero enemy terrain crashes while retaining more than 80 spawned enemies per route, hostile fire, onward movement and the 30-enemy cap. Collision is still authoritative; the overlap regression deliberately places a fighter inside a solid object.
+- Existing 15 weapon/assault completion cases and every side-battery/weapon reachability case pass with the stronger armour. New tests cover gun burst counts/speed, staggered missile pairs, entry warnings, controller weakening and persistent destruction canceling further salvos.
+- Browser help checks passed at 1440×900 and 390×844: hangar access, seven pickup descriptions, mobile scrolling with sticky close control, Escape, focus return, in-flight auto-pause and remaining paused after closing. No application exceptions.
+- A short 180-frame live canyon sample averaged 60.3 FPS while playing, with seven active enemies, two actively avoiding cover, and zero terrain crashes. This is a short desktop sample, not a physical-phone or worst-case benchmark. Human difficulty tuning remains necessary.
+- Screenshots and verification scripts are under ignored `output/playwright/`, including `help-mobile.png`, `help-mobile-bottom.png` and `canyon-avoidance.png`. Changes are local until pushed.
